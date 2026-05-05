@@ -20,3 +20,7 @@ export { createEngineRouter, type EngineFactoryOptions } from './core/engine-fac
 export { DEFAULT_CONFIG, type AppConfig } from './config';
 export * from './core/session';
 export * from './core/lecture';
+export * from './core/store';
+export * from './core/history';
+export * from './core/settings';
+export * from './core/account';
