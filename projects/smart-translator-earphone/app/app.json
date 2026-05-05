@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "Smart Translator Earphone",
+    "slug": "smart-translator-earphone",
+    "version": "0.2.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "scheme": "smarttranslator",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.bmadmethod.smarttranslator",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Smart Translator needs microphone access to capture speech for real-time translation."
+      }
+    },
+    "android": {
+      "package": "com.bmadmethod.smarttranslator",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_CONNECT"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow Smart Translator to access your microphone for speech-to-text."
+        }
+      ]
+    ]
+  }
+}
