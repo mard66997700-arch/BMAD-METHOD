@@ -39,6 +39,11 @@ export default [
       // are dictated by Augment and can't be changed, so exclude
       // the entire directory from linting
       '.augment/**',
+      // Expo app scaffolding (Babel/Metro/entry point) intentionally uses
+      // CommonJS patterns dictated by the React Native tooling.
+      'projects/smart-translator-earphone/app/babel.config.js',
+      'projects/smart-translator-earphone/app/metro.config.js',
+      'projects/smart-translator-earphone/app/index.js',
     ],
   },
 

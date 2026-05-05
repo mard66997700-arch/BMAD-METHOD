@@ -69,3 +69,5 @@ export {
   type LangCode,
   assertNever,
 } from './audio-session-types';
+
+export { createAudioCapture, createAudioPlayback } from './platform-audio-factory';
