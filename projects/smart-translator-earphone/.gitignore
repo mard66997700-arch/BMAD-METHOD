@@ -1,0 +1,6 @@
+# This is a sample BMAD project. Unlike a real BMAD installation, we want to
+# version-control the BMAD artifacts so reviewers and future readers can see
+# the planning output side-by-side with the code. The repo-root `.gitignore`
+# excludes `_bmad-output/` by default; we re-include it here.
+!_bmad-output/
+!_bmad-output/**
