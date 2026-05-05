@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
+import { AudioDeviceStatus } from '../components/AudioDeviceStatus';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { sessionStore, useSessionStore } from '../state/useSessionStore';
 import { COLORS } from '../theme/colors';
@@ -18,6 +19,8 @@ export function HomeScreen({ navigation }: Props) {
         <Text style={styles.title}>Smart Translator</Text>
         <Text style={styles.subtitle}>Real-time speech translation for your earphones</Text>
       </View>
+
+      <AudioDeviceStatus />
 
       <View style={styles.languageRow}>
         <LanguagePicker

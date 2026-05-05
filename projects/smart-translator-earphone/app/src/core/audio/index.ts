@@ -71,3 +71,14 @@ export {
 } from './audio-session-types';
 
 export { createAudioCapture, createAudioPlayback } from './platform-audio-factory';
+
+export {
+  type AudioDeviceMonitor,
+  type AudioDeviceListener,
+  type AudioDeviceSnapshot,
+  type AudioDeviceInfo,
+  type AudioDeviceKind,
+  classifyDeviceLabel,
+  NullAudioDeviceMonitor,
+} from './audio-device-monitor';
+export { WebAudioDeviceMonitor } from './web-audio-device-monitor';
