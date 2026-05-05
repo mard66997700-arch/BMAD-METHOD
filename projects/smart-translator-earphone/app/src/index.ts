@@ -27,3 +27,7 @@ export * from './core/account';
 export * from './core/connectivity';
 export * from './core/packs';
 export * from './core/group';
+export * from './core/telemetry';
+export * from './core/crash';
+export * from './core/resilience';
+export * from './core/onboarding';
