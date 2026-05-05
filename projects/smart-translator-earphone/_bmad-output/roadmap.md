@@ -20,7 +20,8 @@ This roadmap is the **executable summary** of the four BMAD review docs. The rev
 ## 1. State of Play
 
 - **PR #1** — `feat(projects): add smart-translator-earphone BMAD project (Phase 1-4)` — merged. 41 files. All Phase 1–3 artifacts plus Epic 1 stories 1.1–1.5 (TS) and 1.6/1.7 (native skeletons).
-- **PR #2** — `fix(smart-translator-earphone): tag final chunk as utterance boundary on stop()` — open. Audio pipeline fix + docstring + story-count corrections.
+- **PR #18** — `build working app with STT, translation, TTS, and UI (Epics 2-5)` — merged in parallel with the original Phase R stack. Provides a runnable Expo shell with cloud STT/MT/TTS providers + Conversation/Lecture/History/Settings screens (different architecture from Phase R; see [`reviews/reconciliation-decision.md`](reviews/reconciliation-decision.md)).
+- **Phase R consolidated PR** (this roadmap branch) — single PR replacing the original 16-PR stack. Bundles Epic 6 (lecture), Epic 7 (store/history/settings/account), Epic 8 (connectivity/packs), Epic 9 (group), Epic 10 (telemetry/crash/resilience/onboarding/privacy), Epic 11 (server plane), plus the audio-pipeline fix and the BMAD review docs. 252 Jest tests pass locally.
 - **GitHub Actions on the fork** is currently disabled. CI does not run on PRs until the user enables Actions at `https://github.com/arks99-11/BMAD-METHOD/settings/actions`. Local `npm run quality` is the source of truth in the meantime.
 
 ## 2. Plan At A Glance
@@ -129,24 +130,31 @@ Calendar estimate: **9–10 sprints of ~2 weeks** with two engineers. The brief'
 
 The server lives in a new `projects/smart-translator-earphone/server/` directory **only after** the user agrees to take on Cloudflare account setup. Until then, every client story uses the embedded fallback path.
 
-## 7. Per-PR Strategy
+## 7. Per-PR Strategy (post-reconciliation)
 
-Each PR is **scoped to a coherent slice** that passes `npm run quality` independently. Order:
+The original 16-PR stack from this roadmap (PR #2–PR #17) has been reconciled with the parallel-merged PR #18 (see [`reviews/reconciliation-decision.md`](reviews/reconciliation-decision.md)) and **consolidated into a single PR** at the user's request:
 
-1. **PR #2** (open) — chunker boundary fix, docstring, README correction.
-2. **PR #3 (this work)** — `_bmad-output/reviews/{ba,pm,po,sm}-review.md` + `_bmad-output/roadmap.md`.
-3. **PR #4** — Stream A · Sprint S1: Story 2.1 STTProvider + Deepgram + Story 2.2 Google STT.
-4. **PR #5** — Stream A: Story 2.5 engine router + embedded policy + Story 2.4 auto language detect.
-5. **PR #6** — Stream A: Story 3.1 MTProvider + DeepL + Story 3.2 Google MT.
-6. **PR #7** — Stream A: Story 3.3 GPT-4o-mini + Story 3.5 pre-emption.
-7. **PR #8** — Stream A: Story 4.1 ElevenLabs (Premium-flagged) + Story 4.2 Azure Neural TTS.
-8. **PR #9** — Stream A/B: Story 2.3a Whisper shim + Story 3.4a NLLB shim + Story 4.3a native-TTS shim.
-9. **PR #10** — Stream B: Story 7.1 SQLite + FTS5 shim.
-10. **PR #11** — Stream B: Story 10.3 no-audio-retention CI lint rule.
-11. **PR #12** — Bootstrap-1 (RN + Expo Bare shell).
-12. **PR #13+** — UI sprints by feature (E5, E6, E7).
-13. **PR #N** — Server plane (Epic 11) once user accepts Cloudflare account setup.
-14. **PR #N+** — Native modules (Stream E) once user provisions iOS / Android dev resources.
+**Closed (Epic 2-5 duplicates of merged PR #18):**
+
+- PR #4, PR #5, PR #6, PR #7, PR #8, PR #9, PR #10 — Stream-A engine providers (STT/MT/TTS) and conversation session controller. Functionality shipped on `main` via merged PR #18 with a different architecture (env-driven factories + dispatch routers vs. embedded fallback policies + provider abstraction). Kept architectural artifacts documented in `reviews/reconciliation-decision.md` §4 ("Carry-Forward Register") for future refactor PRs.
+
+**Consolidated into one PR (this branch):**
+
+1. PR #2's audio-pipeline `stop()` fix + chunker `utteranceBoundary` flag.
+2. PR #3's BMAD Phase R review (BA/PM/PO/SM) + this roadmap + reconciliation decision.
+3. PR #11's Epic 6 lecture view-model + transcript export.
+4. PR #12's Epic 7 LocalStore + HistoryViewModel + Settings tree + Auth/Subscription contracts.
+5. PR #13's Epic 8 connectivity tracker + language-pack manager.
+6. PR #14's Epic 9 group session client primitives (invite token + join URL + GroupViewModel).
+7. PR #15's Epic 10 telemetry/crash/resilience/onboarding modules.
+8. PR #16's Story 10.2 privacy / no-audio static check.
+9. PR #17's Epic 11 server plane (relay protocol + session store + telemetry ingest validator).
+
+**Out of scope (deferred to future PRs):**
+
+- **Bootstrap-1 (RN + Expo Bare shell)** — already shipped by merged PR #18.
+- **Native modules (Stream E)** — Stories 2.3b (Whisper), 3.4b (NLLB), 4.3b (native TTS), 8.2/8.3 (on-device runtime). Need physical iOS + Android devices.
+- **Cloudflare deployment artifacts** — `wrangler.toml`, Worker entry, Durable Object binding. Need Cloudflare credentials. The pure-TS protocol logic lives in this PR's `app/src/server/` and is unit-testable today.
 
 Each PR must:
 
