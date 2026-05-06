@@ -23,6 +23,7 @@ const STT_ENGINES: ReadonlySet<SttEngineId> = new Set([
   'whisper-cloud',
   'google',
   'web-speech',
+  'expo-speech-recognition',
 ] as const);
 const TRANSLATION_ENGINES: ReadonlySet<TranslationEngineId> = new Set([
   'mock',
@@ -36,6 +37,7 @@ const TTS_ENGINES: ReadonlySet<TtsEngineId> = new Set([
   'azure',
   'google',
   'web-speech',
+  'expo-speech',
 ] as const);
 
 function pickStt(raw: string | undefined): SttEngineId {

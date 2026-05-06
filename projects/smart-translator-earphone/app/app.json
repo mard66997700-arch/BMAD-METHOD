@@ -37,7 +37,8 @@
         {
           "microphonePermission": "Allow Smart Translator to access your microphone for speech-to-text."
         }
-      ]
+      ],
+      "expo-speech-recognition"
     ]
   }
 }

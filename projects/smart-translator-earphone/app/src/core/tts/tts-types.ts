@@ -8,7 +8,7 @@
 
 import type { VoiceSettings } from './voice-settings';
 
-export type TtsEngineId = 'mock' | 'azure' | 'google' | 'web-speech';
+export type TtsEngineId = 'mock' | 'azure' | 'google' | 'web-speech' | 'expo-speech';
 
 export type TtsAudioFormat = 'pcm-int16';
 

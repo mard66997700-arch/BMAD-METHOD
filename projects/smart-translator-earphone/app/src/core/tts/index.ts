@@ -12,4 +12,5 @@ export {
   type WebSpeechTtsOptions,
   type UtteranceCtor,
 } from './web-speech-tts-provider';
+export { ExpoSpeechTtsProvider } from './expo-speech-tts-provider';
 export { TtsEngineRouter, type TtsEngineRouterOptions } from './tts-engine-router';

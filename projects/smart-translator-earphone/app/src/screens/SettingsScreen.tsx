@@ -80,12 +80,14 @@ const TRANSLATION_OPTIONS: Array<{
 const STT_OPTIONS: Array<{ id: SttEngineId; label: string; envVar?: string }> = [
   { id: 'mock', label: 'Mock (demo)' },
   { id: 'web-speech', label: 'Browser Web Speech (free, web only)' },
+  { id: 'expo-speech-recognition', label: 'Native Speech (free, iOS/Android)' },
   { id: 'whisper-cloud', label: 'OpenAI Whisper', envVar: 'EXPO_PUBLIC_OPENAI_API_KEY' },
   { id: 'google', label: 'Google Cloud STT', envVar: 'EXPO_PUBLIC_GOOGLE_CLOUD_API_KEY' },
 ];
 const TTS_OPTIONS: Array<{ id: TtsEngineId; label: string; envVar?: string }> = [
   { id: 'mock', label: 'Mock (demo)' },
   { id: 'web-speech', label: 'Browser Web Speech (free, web only)' },
+  { id: 'expo-speech', label: 'Native TTS (free, iOS/Android)' },
   { id: 'azure', label: 'Azure Neural TTS', envVar: 'EXPO_PUBLIC_AZURE_TTS_KEY' },
   { id: 'google', label: 'Google Cloud TTS', envVar: 'EXPO_PUBLIC_GOOGLE_CLOUD_API_KEY' },
 ];

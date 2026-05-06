@@ -44,6 +44,8 @@ export default [
       'projects/smart-translator-earphone/app/babel.config.js',
       'projects/smart-translator-earphone/app/metro.config.js',
       'projects/smart-translator-earphone/app/index.js',
+      // Jest module mocks are CommonJS by Jest convention.
+      'projects/smart-translator-earphone/app/__mocks__/**',
     ],
   },
 

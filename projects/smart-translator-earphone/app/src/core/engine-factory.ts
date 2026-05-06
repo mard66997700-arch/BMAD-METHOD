@@ -23,6 +23,7 @@ import { MockSttProvider } from './stt/mock-stt-provider';
 import { GoogleSttProvider } from './stt/google-stt-provider';
 import { WhisperCloudProvider } from './stt/whisper-cloud-provider';
 import { WebSpeechSttProvider } from './stt/web-speech-stt-provider';
+import { ExpoSpeechRecognitionProvider } from './stt/expo-speech-recognition-provider';
 import type { SttEngineId, SttProvider } from './stt/stt-types';
 import { MockTranslationProvider } from './translation/mock-translation-provider';
 import { DeeplProvider } from './translation/deepl-provider';
@@ -34,6 +35,7 @@ import { MockTtsProvider } from './tts/mock-tts-provider';
 import { AzureTtsProvider } from './tts/azure-tts-provider';
 import { GoogleTtsProvider } from './tts/google-tts-provider';
 import { WebSpeechTtsProvider } from './tts/web-speech-tts-provider';
+import { ExpoSpeechTtsProvider } from './tts/expo-speech-tts-provider';
 import type { TtsEngineId, TtsProvider } from './tts/tts-types';
 import { DEFAULT_VOICE_SETTINGS, type VoiceSettings } from './tts/voice-settings';
 
@@ -114,10 +116,12 @@ function buildSttProviders(preferred: SttEngineId, apiKeys: RuntimeApiKeys): Stt
   if (googleKey) {
     cloud.push(new GoogleSttProvider({ apiKey: googleKey }));
   }
-  // The Web Speech API is keyless and on-device. `isAvailable()` filters
-  // it out on platforms without `SpeechRecognition`.
+  // Free, keyless, platform-aware fallbacks. Each self-disables
+  // (`isAvailable() === false`) where the platform lacks support, so the
+  // SttEngineRouter skips them automatically.
   const webSpeech: SttProvider = new WebSpeechSttProvider();
-  const ordered: SttProvider[] = [...cloud, webSpeech];
+  const expoSpeech: SttProvider = new ExpoSpeechRecognitionProvider();
+  const ordered: SttProvider[] = [...cloud, webSpeech, expoSpeech];
   // Reorder so the user's preferred engine (if available) comes first.
   const preferredIx = ordered.findIndex((p) => p.id === preferred);
   if (preferredIx > 0) {
@@ -179,8 +183,13 @@ function buildTtsProviders(preferred: TtsEngineId, apiKeys: RuntimeApiKeys): Tts
   if (googleKey) {
     cloud.push(new GoogleTtsProvider({ apiKey: googleKey }));
   }
+  // Free, keyless, platform-aware fallbacks. Both providers self-disable
+  // (`isAvailable() === false`) on platforms they don't support, so it's
+  // safe to register them in any order; the TtsEngineRouter skips
+  // unavailable providers automatically.
   const webSpeech: TtsProvider = new WebSpeechTtsProvider();
-  const ordered: TtsProvider[] = [...cloud, webSpeech];
+  const expoSpeech: TtsProvider = new ExpoSpeechTtsProvider();
+  const ordered: TtsProvider[] = [...cloud, webSpeech, expoSpeech];
   const preferredIx = ordered.findIndex((p) => p.id === preferred);
   if (preferredIx > 0) {
     const [picked] = ordered.splice(preferredIx, 1);

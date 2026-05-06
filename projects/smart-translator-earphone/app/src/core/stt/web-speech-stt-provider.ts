@@ -81,7 +81,7 @@ export class WebSpeechSttProvider implements SttProvider {
   }
 }
 
-class WebSpeechSttSession implements SttSession {
+export class WebSpeechSttSession implements SttSession {
   readonly id: string;
   private readonly listeners = new Set<SttEventListener>();
   private readonly recognition: SpeechRecognitionLike;
