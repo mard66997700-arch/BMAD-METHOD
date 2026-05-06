@@ -22,6 +22,7 @@ import {
 import {
   createEngineRouter,
   type EngineFactoryOptions,
+  type RuntimeApiKeys,
 } from '../core/engine-factory';
 import type { EngineEvent, EngineRouter, SessionStatus } from '../core/engine-router';
 import type { SttEngineId } from '../core/stt/stt-types';
@@ -39,6 +40,13 @@ export type ConversationMode = 'conversation' | 'lecture';
  *     detection can prevent the option from showing in the UI.
  */
 export type AudioInputSource = 'mic' | 'tab';
+
+/**
+ * Provider key slots. Runtime keys typed in the Settings screen are stored
+ * here and forwarded to the engine factory; they take precedence over the
+ * `EXPO_PUBLIC_*` env-vars baked in at build time.
+ */
+export type ApiKeyProvider = 'openai' | 'google' | 'deepl' | 'azure';
 
 export interface TranscriptEntry {
   id: string;
@@ -80,6 +88,11 @@ export interface SessionState {
   ttsEngine: TtsEngineId;
   voice: VoiceSettings;
   speakOutput: boolean;
+  /**
+   * Runtime API keys for cloud providers. Empty string / missing = not
+   * configured. Mutated via `setApiKey()`.
+   */
+  apiKeys: RuntimeApiKeys;
   entries: TranscriptEntry[];
   history: PastSession[];
   errorMessage: string | null;
@@ -114,6 +127,7 @@ export class SessionStore {
       ttsEngine: DEFAULT_CONFIG.defaultTtsEngine,
       voice: DEFAULT_VOICE_SETTINGS,
       speakOutput: true,
+      apiKeys: {},
       entries: [],
       history: [],
       errorMessage: null,
@@ -171,6 +185,20 @@ export class SessionStore {
   setSpeakOutput(speak: boolean): void {
     this.update({ speakOutput: speak });
     this.engine?.setSpeakOutput(speak);
+  }
+
+  /**
+   * Store an API key entered via the Settings screen. Passing an empty
+   * string clears the key. Drops the cached engine so the next
+   * `startSession()` rebuilds the provider chain with the new credentials.
+   */
+  setApiKey(provider: ApiKeyProvider, key: string): void {
+    const trimmed = key.trim();
+    const next: RuntimeApiKeys = { ...this.state.apiKeys };
+    if (trimmed.length === 0) delete next[provider];
+    else next[provider] = trimmed;
+    this.update({ apiKeys: next });
+    this.invalidateEngine();
   }
 
   /**
@@ -275,6 +303,7 @@ export class SessionStore {
       sttEngine: this.state.sttEngine,
       translationEngine: this.state.translationEngine,
       ttsEngine: this.state.ttsEngine,
+      apiKeys: this.state.apiKeys,
     };
     return createEngineRouter(opts);
   }

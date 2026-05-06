@@ -16,7 +16,11 @@ export {
   type EngineRouterOptions,
   type SessionStatus,
 } from './core/engine-router';
-export { createEngineRouter, type EngineFactoryOptions } from './core/engine-factory';
+export {
+  createEngineRouter,
+  type EngineFactoryOptions,
+  type RuntimeApiKeys,
+} from './core/engine-factory';
 export { DEFAULT_CONFIG, type AppConfig } from './config';
 export * from './core/session';
 export * from './core/lecture';

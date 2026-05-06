@@ -19,7 +19,13 @@ export interface AppConfig {
 }
 
 const STT_ENGINES: ReadonlySet<SttEngineId> = new Set(['mock', 'whisper-cloud', 'google'] as const);
-const TRANSLATION_ENGINES: ReadonlySet<TranslationEngineId> = new Set(['mock', 'deepl', 'openai', 'google'] as const);
+const TRANSLATION_ENGINES: ReadonlySet<TranslationEngineId> = new Set([
+  'mock',
+  'deepl',
+  'openai',
+  'google',
+  'google-free',
+] as const);
 const TTS_ENGINES: ReadonlySet<TtsEngineId> = new Set(['mock', 'azure', 'google'] as const);
 
 function pickStt(raw: string | undefined): SttEngineId {
@@ -28,7 +34,7 @@ function pickStt(raw: string | undefined): SttEngineId {
 function pickTranslation(raw: string | undefined): TranslationEngineId {
   return raw && TRANSLATION_ENGINES.has(raw as TranslationEngineId)
     ? (raw as TranslationEngineId)
-    : 'mock';
+    : 'google-free';
 }
 function pickTts(raw: string | undefined): TtsEngineId {
   return raw && TTS_ENGINES.has(raw as TtsEngineId) ? (raw as TtsEngineId) : 'mock';
@@ -56,5 +62,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     { code: 'ru', label: 'Russian' },
     { code: 'tr', label: 'Turkish' },
     { code: 'pl', label: 'Polish' },
+    { code: 'vi', label: 'Vietnamese' },
+    { code: 'th', label: 'Thai' },
+    { code: 'id', label: 'Indonesian' },
   ],
 };

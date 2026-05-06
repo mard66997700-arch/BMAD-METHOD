@@ -1,24 +1,85 @@
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { hasEnv } from '../config/env';
 import { sessionStore, useSessionStore } from '../state/useSessionStore';
+import type { ApiKeyProvider } from '../state/SessionStore';
 import type { SttEngineId } from '../core/stt/stt-types';
 import type { TranslationEngineId } from '../core/translation/translation-types';
 import type { TtsEngineId } from '../core/tts/tts-types';
 import { withGender, withPitch, withSpeed, type VoiceGender } from '../core/tts/voice-settings';
 import { COLORS } from '../theme/colors';
 
+/**
+ * Friendly Translation Service options surfaced to end-users. Each entry
+ * picks the matching STT/TTS engine pair so the user only chooses one
+ * thing. `apiKeyProvider` indicates which runtime key, if any, this
+ * service requires (the input field is hidden when undefined).
+ */
+const TRANSLATION_OPTIONS: Array<{
+  id: TranslationEngineId;
+  label: string;
+  description: string;
+  apiKeyProvider?: ApiKeyProvider;
+  apiKeyHint?: string;
+  stt: SttEngineId;
+  tts: TtsEngineId;
+}> = [
+  {
+    id: 'google-free',
+    label: 'Free (Google Translate)',
+    description: 'No key required. Personal use only — rate limited.',
+    stt: 'mock',
+    tts: 'mock',
+  },
+  {
+    id: 'google',
+    label: 'Google Cloud',
+    description: 'STT + Translation + TTS via Google Cloud (single key).',
+    apiKeyProvider: 'google',
+    apiKeyHint: 'Google Cloud API key (Translation, Speech, Text-to-Speech)',
+    stt: 'google',
+    tts: 'google',
+  },
+  {
+    id: 'deepl',
+    label: 'DeepL',
+    description: 'High-quality translation. Pair with mock STT/TTS unless configured.',
+    apiKeyProvider: 'deepl',
+    apiKeyHint: 'DeepL API auth key',
+    stt: 'mock',
+    tts: 'mock',
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI GPT-4',
+    description: 'Context-aware translation + Whisper STT.',
+    apiKeyProvider: 'openai',
+    apiKeyHint: 'OpenAI API key (sk-…)',
+    stt: 'whisper-cloud',
+    tts: 'mock',
+  },
+  {
+    id: 'mock',
+    label: 'Demo Mode',
+    description: 'Deterministic fake translations — no network required.',
+    stt: 'mock',
+    tts: 'mock',
+  },
+];
+
 const STT_OPTIONS: Array<{ id: SttEngineId; label: string; envVar?: string }> = [
   { id: 'mock', label: 'Mock (demo)' },
   { id: 'whisper-cloud', label: 'OpenAI Whisper', envVar: 'EXPO_PUBLIC_OPENAI_API_KEY' },
   { id: 'google', label: 'Google Cloud STT', envVar: 'EXPO_PUBLIC_GOOGLE_CLOUD_API_KEY' },
-];
-const TRANSLATION_OPTIONS: Array<{ id: TranslationEngineId; label: string; envVar?: string }> = [
-  { id: 'mock', label: 'Mock (demo)' },
-  { id: 'deepl', label: 'DeepL', envVar: 'EXPO_PUBLIC_DEEPL_API_KEY' },
-  { id: 'openai', label: 'OpenAI GPT-4', envVar: 'EXPO_PUBLIC_OPENAI_API_KEY' },
-  { id: 'google', label: 'Google Translate', envVar: 'EXPO_PUBLIC_GOOGLE_CLOUD_API_KEY' },
 ];
 const TTS_OPTIONS: Array<{ id: TtsEngineId; label: string; envVar?: string }> = [
   { id: 'mock', label: 'Mock (demo)' },
@@ -34,42 +95,62 @@ type EnvKey =
 
 export function SettingsScreen() {
   const state = useSessionStore();
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  const currentService = useMemo(
+    () =>
+      TRANSLATION_OPTIONS.find((opt) => opt.id === state.translationEngine) ??
+      TRANSLATION_OPTIONS[0]!,
+    [state.translationEngine],
+  );
+  const apiKeyValue = currentService.apiKeyProvider
+    ? state.apiKeys[currentService.apiKeyProvider] ?? ''
+    : '';
+
+  const onSelectService = (opt: (typeof TRANSLATION_OPTIONS)[number]) => {
+    sessionStore.setTranslationEngine(opt.id);
+    // Auto-pair STT/TTS so end-users don't have to think about them.
+    sessionStore.setSttEngine(opt.stt);
+    sessionStore.setTtsEngine(opt.tts);
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Section title="Speech-to-Text Engine">
-        {STT_OPTIONS.map((opt) => (
-          <EngineRow
-            key={opt.id}
-            label={opt.label}
-            envVar={opt.envVar}
-            active={state.sttEngine === opt.id}
-            onPress={() => sessionStore.setSttEngine(opt.id)}
-          />
-        ))}
-      </Section>
-
-      <Section title="Translation Engine">
+      <Section title="Translation Service">
+        <Text style={styles.help}>
+          Pick how the app translates. The free option works without any setup; paid options need
+          an API key.
+        </Text>
         {TRANSLATION_OPTIONS.map((opt) => (
-          <EngineRow
+          <ServiceRow
             key={opt.id}
             label={opt.label}
-            envVar={opt.envVar}
+            description={opt.description}
             active={state.translationEngine === opt.id}
-            onPress={() => sessionStore.setTranslationEngine(opt.id)}
+            onPress={() => onSelectService(opt)}
           />
         ))}
-      </Section>
 
-      <Section title="Text-to-Speech Engine">
-        {TTS_OPTIONS.map((opt) => (
-          <EngineRow
-            key={opt.id}
-            label={opt.label}
-            envVar={opt.envVar}
-            active={state.ttsEngine === opt.id}
-            onPress={() => sessionStore.setTtsEngine(opt.id)}
-          />
-        ))}
+        {currentService.apiKeyProvider && (
+          <View style={styles.apiKeyBlock}>
+            <Text style={styles.label}>API key for {currentService.label}</Text>
+            <TextInput
+              style={styles.input}
+              placeholder={currentService.apiKeyHint ?? 'Paste API key here'}
+              placeholderTextColor={COLORS.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              value={apiKeyValue}
+              onChangeText={(v) =>
+                sessionStore.setApiKey(currentService.apiKeyProvider!, v)
+              }
+            />
+            <Text style={styles.helpSmall}>
+              Stored in memory only. Cleared when the app reloads.
+            </Text>
+          </View>
+        )}
       </Section>
 
       <Section title="Voice">
@@ -111,16 +192,52 @@ export function SettingsScreen() {
         </View>
       </Section>
 
-      <Section title="API keys">
-        <Text style={styles.help}>
-          API keys are read at build time from EXPO_PUBLIC_* environment variables. To configure, copy
-          .env.example to .env in the app folder and rebuild.
+      <Pressable
+        style={styles.advancedHeader}
+        onPress={() => setAdvancedOpen((v) => !v)}
+        accessibilityRole="button"
+      >
+        <Text style={styles.advancedHeaderText}>
+          {advancedOpen ? '▾' : '▸'} Advanced
         </Text>
-        <KeyStatus name="EXPO_PUBLIC_OPENAI_API_KEY" />
-        <KeyStatus name="EXPO_PUBLIC_GOOGLE_CLOUD_API_KEY" />
-        <KeyStatus name="EXPO_PUBLIC_DEEPL_API_KEY" />
-        <KeyStatus name="EXPO_PUBLIC_AZURE_TTS_KEY" />
-      </Section>
+      </Pressable>
+
+      {advancedOpen && (
+        <>
+          <Section title="Speech-to-Text Engine">
+            {STT_OPTIONS.map((opt) => (
+              <EngineRow
+                key={opt.id}
+                label={opt.label}
+                envVar={opt.envVar}
+                active={state.sttEngine === opt.id}
+                onPress={() => sessionStore.setSttEngine(opt.id)}
+              />
+            ))}
+          </Section>
+          <Section title="Text-to-Speech Engine">
+            {TTS_OPTIONS.map((opt) => (
+              <EngineRow
+                key={opt.id}
+                label={opt.label}
+                envVar={opt.envVar}
+                active={state.ttsEngine === opt.id}
+                onPress={() => sessionStore.setTtsEngine(opt.id)}
+              />
+            ))}
+          </Section>
+          <Section title="Build-time API key status">
+            <Text style={styles.help}>
+              These show which EXPO_PUBLIC_* env vars were baked in at build time. Runtime keys
+              entered above always take precedence.
+            </Text>
+            <KeyStatus name="EXPO_PUBLIC_OPENAI_API_KEY" />
+            <KeyStatus name="EXPO_PUBLIC_GOOGLE_CLOUD_API_KEY" />
+            <KeyStatus name="EXPO_PUBLIC_DEEPL_API_KEY" />
+            <KeyStatus name="EXPO_PUBLIC_AZURE_TTS_KEY" />
+          </Section>
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -131,6 +248,33 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <Text style={styles.sectionTitle}>{title}</Text>
       {children}
     </View>
+  );
+}
+
+function ServiceRow({
+  label,
+  description,
+  active,
+  onPress,
+}: {
+  label: string;
+  description: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={[styles.serviceRow, active && styles.engineRowActive]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+    >
+      <View style={styles.serviceRowText}>
+        <Text style={styles.engineLabel}>{label}</Text>
+        <Text style={styles.serviceDesc}>{description}</Text>
+      </View>
+      {active && <Text style={styles.engineActive}>Active</Text>}
+    </Pressable>
   );
 }
 
@@ -193,12 +337,37 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderWidth: 1,
   },
+  serviceRow: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderColor: COLORS.border,
+    borderWidth: 1,
+    gap: 12,
+  },
+  serviceRowText: { flex: 1 },
+  serviceDesc: { color: COLORS.textMuted, fontSize: 12, marginTop: 2 },
   engineRowActive: { borderColor: COLORS.primary },
   engineRowDisabled: { opacity: 0.6 },
   engineLabel: { color: COLORS.text, fontSize: 15 },
   engineActive: { color: COLORS.primary, fontSize: 12, fontWeight: '700' },
   engineMissing: { color: COLORS.warning, fontSize: 11 },
   label: { color: COLORS.textMuted, fontSize: 12, marginTop: 8 },
+  apiKeyBlock: { gap: 6, marginTop: 8 },
+  input: {
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: COLORS.text,
+    fontSize: 14,
+  },
+  helpSmall: { color: COLORS.textMuted, fontSize: 11 },
   row: { flexDirection: 'row', gap: 8 },
   pill: {
     paddingVertical: 8,
@@ -235,4 +404,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   smallButtonText: { color: COLORS.text, fontSize: 16, fontWeight: '600' },
+  advancedHeader: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    padding: 14,
+    borderColor: COLORS.border,
+    borderWidth: 1,
+  },
+  advancedHeaderText: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
 });

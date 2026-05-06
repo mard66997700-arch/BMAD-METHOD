@@ -41,7 +41,7 @@ export interface GoogleTranslateFreeOptions {
 }
 
 export class GoogleTranslateFreeProvider implements TranslationProvider {
-  readonly id = 'google' as const;
+  readonly id = 'google-free' as const;
 
   constructor(private readonly opts: GoogleTranslateFreeOptions = {}) {}
 
@@ -93,6 +93,6 @@ function parseResponse(raw: unknown, request: TranslationRequest): TranslationRe
     text: translated,
     sourceLang,
     targetLang: request.targetLang,
-    engine: 'google',
+    engine: 'google-free',
   };
 }

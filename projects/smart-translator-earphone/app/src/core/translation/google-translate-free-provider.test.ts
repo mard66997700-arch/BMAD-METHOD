@@ -16,6 +16,11 @@ describe('GoogleTranslateFreeProvider', () => {
     expect(p.isAvailable()).toBe(true);
   });
 
+  it('exposes id "google-free" to differentiate from the paid Google provider', () => {
+    const p = new GoogleTranslateFreeProvider();
+    expect(p.id).toBe('google-free');
+  });
+
   it('parses a simple single-chunk response', async () => {
     const fetchFn = fakeFetch([[['Hola', 'Hello', null, null, 0]], null, 'en']);
     const p = new GoogleTranslateFreeProvider({ fetchFn });
@@ -23,7 +28,7 @@ describe('GoogleTranslateFreeProvider', () => {
     expect(r.text).toBe('Hola');
     expect(r.sourceLang).toBe('en');
     expect(r.targetLang).toBe('es');
-    expect(r.engine).toBe('google');
+    expect(r.engine).toBe('google-free');
   });
 
   it('concatenates multi-chunk responses (long sentences)', async () => {
