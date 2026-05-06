@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { AudioDeviceStatus } from '../components/AudioDeviceStatus';
+import { InputSourcePicker } from '../components/InputSourcePicker';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { sessionStore, useSessionStore } from '../state/useSessionStore';
 import { COLORS } from '../theme/colors';
@@ -21,6 +22,8 @@ export function HomeScreen({ navigation }: Props) {
       </View>
 
       <AudioDeviceStatus />
+
+      <InputSourcePicker />
 
       <View style={styles.languageRow}>
         <LanguagePicker

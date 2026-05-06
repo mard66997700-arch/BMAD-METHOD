@@ -70,7 +70,11 @@ export {
   assertNever,
 } from './audio-session-types';
 
-export { createAudioCapture, createAudioPlayback } from './platform-audio-factory';
+export {
+  createAudioCapture,
+  createAudioPlayback,
+  createTabAudioCapture,
+} from './platform-audio-factory';
 
 export {
   type AudioDeviceMonitor,

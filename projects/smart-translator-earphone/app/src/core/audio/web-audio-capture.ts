@@ -22,6 +22,7 @@ import type {
   StateListener,
 } from './audio-capture';
 import { FRAME_SAMPLES, SAMPLE_RATE_HZ, type AudioFrame } from './audio-types';
+import { concatFloat32, downsampleFloat32, floatToInt16 } from './web-audio-utils';
 
 interface WebAudioGlobals {
   AudioContext?: typeof AudioContext;
@@ -144,39 +145,4 @@ export class WebAudioCaptureProvider implements AudioCaptureProvider {
   }
 }
 
-function concatFloat32(a: Float32Array, b: Float32Array): Float32Array {
-  const out = new Float32Array(a.length + b.length);
-  out.set(a, 0);
-  out.set(b, a.length);
-  return out;
-}
 
-function downsampleFloat32(input: Float32Array, fromRate: number, toRate: number): Float32Array {
-  if (fromRate === toRate) return input;
-  if (toRate > fromRate) {
-    throw new Error(`Cannot upsample from ${fromRate} to ${toRate}`);
-  }
-  const ratio = fromRate / toRate;
-  const outLength = Math.floor(input.length / ratio);
-  const out = new Float32Array(outLength);
-  for (let i = 0; i < outLength; i++) {
-    // Average the input samples that fall into this output sample. This is
-    // a low-pass / box filter; good enough for VAD-quality speech and
-    // dramatically simpler than a polyphase resampler.
-    const start = Math.floor(i * ratio);
-    const end = Math.min(input.length, Math.floor((i + 1) * ratio));
-    let sum = 0;
-    for (let j = start; j < end; j++) sum += input[j]!;
-    out[i] = end > start ? sum / (end - start) : 0;
-  }
-  return out;
-}
-
-function floatToInt16(input: Float32Array): Int16Array {
-  const out = new Int16Array(input.length);
-  for (let i = 0; i < input.length; i++) {
-    const clamped = Math.max(-1, Math.min(1, input[i]!));
-    out[i] = Math.round(clamped * 32767);
-  }
-  return out;
-}

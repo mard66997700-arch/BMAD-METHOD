@@ -54,3 +54,20 @@ export function createAudioPlayback(): AudioPlaybackProvider {
   }
   return new MockAudioPlaybackProvider();
 }
+
+/**
+ * Tab / system audio capture. Web-only: native iOS/Android do not allow
+ * third-party apps to capture system audio (Apple blocks entirely; Android
+ * `AudioPlaybackCapture` requires per-app opt-in and is rarely usable in
+ * practice for streaming apps). On native platforms this returns a Mock
+ * provider so callers can detect "not supported" via a feature check
+ * rather than a runtime crash.
+ */
+export function createTabAudioCapture(): AudioCaptureProvider {
+  const os = detectPlatformOs();
+  if (os === 'web') {
+    const { WebTabAudioCaptureProvider } = require('./web-tab-audio-capture');
+    return new WebTabAudioCaptureProvider();
+  }
+  return new MockAudioCaptureProvider();
+}
