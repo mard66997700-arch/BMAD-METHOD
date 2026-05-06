@@ -5,6 +5,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AudioDeviceStatus } from '../components/AudioDeviceStatus';
 import { InputSourcePicker } from '../components/InputSourcePicker';
 import { LanguagePicker } from '../components/LanguagePicker';
+import { MicSourcePicker } from '../components/MicSourcePicker';
 import { sessionStore, useSessionStore } from '../state/useSessionStore';
 import { COLORS } from '../theme/colors';
 import type { RootStackParamList } from '../navigation/AppNavigator';
@@ -24,6 +25,8 @@ export function HomeScreen({ navigation }: Props) {
       <AudioDeviceStatus />
 
       <InputSourcePicker />
+
+      <MicSourcePicker />
 
       <View style={styles.languageRow}>
         <LanguagePicker

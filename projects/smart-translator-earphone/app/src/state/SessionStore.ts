@@ -67,6 +67,12 @@ export interface SessionState {
   status: SessionStatus;
   mode: ConversationMode;
   inputSource: AudioInputSource;
+  /**
+   * The selected microphone deviceId on web. Empty string means "use the
+   * OS default device". Ignored when inputSource is 'tab' or on native
+   * platforms.
+   */
+  micDeviceId: string;
   sourceLang: string | 'auto';
   targetLang: string;
   sttEngine: SttEngineId;
@@ -100,6 +106,7 @@ export class SessionStore {
       status: 'idle',
       mode: 'conversation',
       inputSource: 'mic',
+      micDeviceId: '',
       sourceLang: 'auto',
       targetLang: DEFAULT_CONFIG.defaultTargetLang,
       sttEngine: DEFAULT_CONFIG.defaultSttEngine,
@@ -180,7 +187,24 @@ export class SessionStore {
     }
     if (this.state.inputSource === source) return;
     this.update({ inputSource: source });
-    // Invalidate the cached engine so buildEngine() runs again next start.
+    this.invalidateEngine();
+  }
+
+  /**
+   * Choose which microphone to capture from. Empty string selects the OS
+   * default. Takes effect on the next `startSession()`. Throws if a
+   * session is currently active.
+   */
+  setMicDeviceId(deviceId: string): void {
+    if (this.state.status === 'active' || this.state.status === 'starting') {
+      throw new Error('Stop the current session before changing the microphone.');
+    }
+    if (this.state.micDeviceId === deviceId) return;
+    this.update({ micDeviceId: deviceId });
+    this.invalidateEngine();
+  }
+
+  private invalidateEngine(): void {
     this.engine = null;
     if (this.engineUnsubscribe) {
       this.engineUnsubscribe();
@@ -236,7 +260,11 @@ export class SessionStore {
 
   private buildEngine(): EngineRouter {
     const capture =
-      this.state.inputSource === 'tab' ? createTabAudioCapture() : createAudioCapture();
+      this.state.inputSource === 'tab'
+        ? createTabAudioCapture()
+        : createAudioCapture({
+            deviceId: this.state.micDeviceId || undefined,
+          });
     const opts: EngineFactoryOptions = {
       capture,
       playback: createAudioPlayback(),

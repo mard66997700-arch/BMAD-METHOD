@@ -32,6 +32,17 @@ interface WebAudioGlobals {
 
 const RESAMPLE_SAMPLE_RATE = SAMPLE_RATE_HZ; // 16000
 
+export interface WebAudioCaptureOptions {
+  /**
+   * The `MediaDeviceInfo.deviceId` to capture from. When omitted the
+   * browser uses its default audio input device. Note that browsers
+   * only return non-empty deviceIds AFTER the user has granted mic
+   * permission at least once — use {@link enumerateAudioInputs} to
+   * fetch the list with labels.
+   */
+  deviceId?: string;
+}
+
 export class WebAudioCaptureProvider implements AudioCaptureProvider {
   private _state: CaptureState = 'idle';
   private readonly frameListeners = new Set<FrameListener>();
@@ -44,6 +55,15 @@ export class WebAudioCaptureProvider implements AudioCaptureProvider {
   private leftover = new Float32Array(0);
   private seq = 0;
   private startMs = 0;
+
+  constructor(private readonly opts: WebAudioCaptureOptions = {}) {}
+
+  /**
+   * Update the desired input device. Takes effect on the next `start()`.
+   */
+  setDeviceId(deviceId: string | undefined): void {
+    (this.opts as { deviceId?: string }).deviceId = deviceId;
+  }
 
   get state(): CaptureState {
     return this._state;
@@ -60,7 +80,12 @@ export class WebAudioCaptureProvider implements AudioCaptureProvider {
         throw new Error('navigator.mediaDevices.getUserMedia is not available');
       }
       this.context = new Ctx();
-      this.mediaStream = await g.navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioConstraint: MediaTrackConstraints | true = this.opts.deviceId
+        ? { deviceId: { exact: this.opts.deviceId } }
+        : true;
+      this.mediaStream = await g.navigator.mediaDevices.getUserMedia({
+        audio: audioConstraint,
+      });
       this.source = this.context.createMediaStreamSource(this.mediaStream);
       // ScriptProcessorNode is deprecated but universally supported. AudioWorklet
       // would be preferable but requires a separate worklet file which complicates
@@ -142,6 +167,42 @@ export class WebAudioCaptureProvider implements AudioCaptureProvider {
   private transition(next: CaptureState): void {
     this._state = next;
     for (const l of this.stateListeners) l(next);
+  }
+}
+
+export interface AudioInputDeviceInfo {
+  deviceId: string;
+  /** Human label, e.g. "Built-in Microphone" or "AirPods Pro". May be empty
+   *  before the user has granted mic permission at least once. */
+  label: string;
+  /** Empty for the first device returned by the browser; non-empty for the
+   *  rest. Useful for grouping virtual devices belonging to the same
+   *  physical hardware. */
+  groupId: string;
+}
+
+/**
+ * List the available audio input devices via
+ * `navigator.mediaDevices.enumerateDevices()`. Returns `[]` when the API
+ * is not available or the call fails.
+ *
+ * IMPORTANT: Browsers strip device labels until the user has granted mic
+ * permission at least once. To get useful labels, call `getUserMedia({
+ * audio: true })` once to obtain permission, then call this function.
+ */
+export async function enumerateAudioInputs(): Promise<AudioInputDeviceInfo[]> {
+  const g = globalThis as unknown as WebAudioGlobals;
+  const enumerate = g.navigator?.mediaDevices?.enumerateDevices?.bind(
+    g.navigator.mediaDevices,
+  );
+  if (!enumerate) return [];
+  try {
+    const devices = await enumerate();
+    return devices
+      .filter((d) => d.kind === 'audioinput')
+      .map((d) => ({ deviceId: d.deviceId, label: d.label, groupId: d.groupId }));
+  } catch {
+    return [];
   }
 }
 

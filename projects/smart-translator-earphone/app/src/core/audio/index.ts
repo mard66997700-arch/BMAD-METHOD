@@ -74,7 +74,14 @@ export {
   createAudioCapture,
   createAudioPlayback,
   createTabAudioCapture,
+  type CreateAudioCaptureOptions,
 } from './platform-audio-factory';
+
+export {
+  enumerateAudioInputs,
+  type AudioInputDeviceInfo,
+  type WebAudioCaptureOptions,
+} from './web-audio-capture';
 
 export {
   type AudioDeviceMonitor,

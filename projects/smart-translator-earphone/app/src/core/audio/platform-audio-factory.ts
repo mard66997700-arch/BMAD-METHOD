@@ -33,11 +33,20 @@ function detectPlatformOs(): string | null {
   return cachedPlatformOs;
 }
 
-export function createAudioCapture(): AudioCaptureProvider {
+export interface CreateAudioCaptureOptions {
+  /**
+   * On web, pass through to {@link WebAudioCaptureProvider} so the user
+   * can pick a non-default microphone (e.g. AirPods, USB mic) via
+   * `getUserMedia`. Ignored on native platforms.
+   */
+  deviceId?: string;
+}
+
+export function createAudioCapture(options: CreateAudioCaptureOptions = {}): AudioCaptureProvider {
   const os = detectPlatformOs();
   if (os === 'web') {
     const { WebAudioCaptureProvider } = require('./web-audio-capture');
-    return new WebAudioCaptureProvider();
+    return new WebAudioCaptureProvider({ deviceId: options.deviceId });
   }
   if (os === 'ios' || os === 'android') {
     const { ExpoAudioCaptureProvider } = require('./expo-audio-capture');
