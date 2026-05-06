@@ -22,6 +22,7 @@ import {
 import { MockSttProvider } from './stt/mock-stt-provider';
 import { GoogleSttProvider } from './stt/google-stt-provider';
 import { WhisperCloudProvider } from './stt/whisper-cloud-provider';
+import { WebSpeechSttProvider } from './stt/web-speech-stt-provider';
 import type { SttEngineId, SttProvider } from './stt/stt-types';
 import { MockTranslationProvider } from './translation/mock-translation-provider';
 import { DeeplProvider } from './translation/deepl-provider';
@@ -32,6 +33,7 @@ import type { TranslationEngineId, TranslationProvider } from './translation/tra
 import { MockTtsProvider } from './tts/mock-tts-provider';
 import { AzureTtsProvider } from './tts/azure-tts-provider';
 import { GoogleTtsProvider } from './tts/google-tts-provider';
+import { WebSpeechTtsProvider } from './tts/web-speech-tts-provider';
 import type { TtsEngineId, TtsProvider } from './tts/tts-types';
 import { DEFAULT_VOICE_SETTINGS, type VoiceSettings } from './tts/voice-settings';
 
@@ -106,13 +108,17 @@ function buildSttProviders(preferred: SttEngineId, apiKeys: RuntimeApiKeys): Stt
   if (googleKey) {
     cloud.push(new GoogleSttProvider({ apiKey: googleKey }));
   }
+  // The Web Speech API is keyless and on-device. `isAvailable()` filters
+  // it out on platforms without `SpeechRecognition`.
+  const webSpeech: SttProvider = new WebSpeechSttProvider();
+  const ordered: SttProvider[] = [...cloud, webSpeech];
   // Reorder so the user's preferred engine (if available) comes first.
-  const preferredIx = cloud.findIndex((p) => p.id === preferred);
+  const preferredIx = ordered.findIndex((p) => p.id === preferred);
   if (preferredIx > 0) {
-    const [picked] = cloud.splice(preferredIx, 1);
-    cloud.unshift(picked!);
+    const [picked] = ordered.splice(preferredIx, 1);
+    ordered.unshift(picked!);
   }
-  providers.push(...cloud);
+  providers.push(...ordered);
   providers.push(new MockSttProvider());
   return providers;
 }
@@ -167,12 +173,14 @@ function buildTtsProviders(preferred: TtsEngineId, apiKeys: RuntimeApiKeys): Tts
   if (googleKey) {
     cloud.push(new GoogleTtsProvider({ apiKey: googleKey }));
   }
-  const preferredIx = cloud.findIndex((p) => p.id === preferred);
+  const webSpeech: TtsProvider = new WebSpeechTtsProvider();
+  const ordered: TtsProvider[] = [...cloud, webSpeech];
+  const preferredIx = ordered.findIndex((p) => p.id === preferred);
   if (preferredIx > 0) {
-    const [picked] = cloud.splice(preferredIx, 1);
-    cloud.unshift(picked!);
+    const [picked] = ordered.splice(preferredIx, 1);
+    ordered.unshift(picked!);
   }
-  providers.push(...cloud);
+  providers.push(...ordered);
   providers.push(new MockTtsProvider());
   return providers;
 }

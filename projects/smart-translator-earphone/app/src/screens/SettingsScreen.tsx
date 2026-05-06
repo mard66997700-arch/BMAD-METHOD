@@ -36,9 +36,10 @@ const TRANSLATION_OPTIONS: Array<{
   {
     id: 'google-free',
     label: 'Free (Google Translate)',
-    description: 'No key required. Personal use only — rate limited.',
-    stt: 'mock',
-    tts: 'mock',
+    description:
+      'No key required. Browser Web Speech for STT + TTS, free Google endpoint for translation. Web only, rate limited.',
+    stt: 'web-speech',
+    tts: 'web-speech',
   },
   {
     id: 'google',
@@ -52,20 +53,20 @@ const TRANSLATION_OPTIONS: Array<{
   {
     id: 'deepl',
     label: 'DeepL',
-    description: 'High-quality translation. Pair with mock STT/TTS unless configured.',
+    description: 'High-quality translation. Pairs with browser Web Speech for STT + TTS.',
     apiKeyProvider: 'deepl',
     apiKeyHint: 'DeepL API auth key',
-    stt: 'mock',
-    tts: 'mock',
+    stt: 'web-speech',
+    tts: 'web-speech',
   },
   {
     id: 'openai',
     label: 'OpenAI GPT-4',
-    description: 'Context-aware translation + Whisper STT.',
+    description: 'Context-aware translation + Whisper STT. Browser Web Speech for TTS.',
     apiKeyProvider: 'openai',
     apiKeyHint: 'OpenAI API key (sk-…)',
     stt: 'whisper-cloud',
-    tts: 'mock',
+    tts: 'web-speech',
   },
   {
     id: 'mock',
@@ -78,11 +79,13 @@ const TRANSLATION_OPTIONS: Array<{
 
 const STT_OPTIONS: Array<{ id: SttEngineId; label: string; envVar?: string }> = [
   { id: 'mock', label: 'Mock (demo)' },
+  { id: 'web-speech', label: 'Browser Web Speech (free, web only)' },
   { id: 'whisper-cloud', label: 'OpenAI Whisper', envVar: 'EXPO_PUBLIC_OPENAI_API_KEY' },
   { id: 'google', label: 'Google Cloud STT', envVar: 'EXPO_PUBLIC_GOOGLE_CLOUD_API_KEY' },
 ];
 const TTS_OPTIONS: Array<{ id: TtsEngineId; label: string; envVar?: string }> = [
   { id: 'mock', label: 'Mock (demo)' },
+  { id: 'web-speech', label: 'Browser Web Speech (free, web only)' },
   { id: 'azure', label: 'Azure Neural TTS', envVar: 'EXPO_PUBLIC_AZURE_TTS_KEY' },
   { id: 'google', label: 'Google Cloud TTS', envVar: 'EXPO_PUBLIC_GOOGLE_CLOUD_API_KEY' },
 ];

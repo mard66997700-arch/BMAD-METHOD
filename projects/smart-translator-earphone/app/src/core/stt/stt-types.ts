@@ -9,7 +9,7 @@
 
 import type { AudioChunk } from '../audio/audio-types';
 
-export type SttEngineId = 'mock' | 'whisper-cloud' | 'google';
+export type SttEngineId = 'mock' | 'whisper-cloud' | 'google' | 'web-speech';
 
 export interface SttSessionOptions {
   /** ISO-639-1 source language, or 'auto' for auto-detection. */
