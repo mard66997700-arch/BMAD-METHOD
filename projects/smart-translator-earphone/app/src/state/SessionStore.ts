@@ -89,6 +89,12 @@ export interface SessionState {
   voice: VoiceSettings;
   speakOutput: boolean;
   /**
+   * Stereo dual-ear playback. When true, the captured source audio is
+   * monitored back to the left earphone and the synthesized translation
+   * plays in the right earphone (interpreter-style). Default false.
+   */
+  dualEarStereo: boolean;
+  /**
    * Runtime API keys for cloud providers. Empty string / missing = not
    * configured. Mutated via `setApiKey()`.
    */
@@ -127,6 +133,7 @@ export class SessionStore {
       ttsEngine: DEFAULT_CONFIG.defaultTtsEngine,
       voice: DEFAULT_VOICE_SETTINGS,
       speakOutput: true,
+      dualEarStereo: false,
       apiKeys: {},
       entries: [],
       history: [],
@@ -185,6 +192,12 @@ export class SessionStore {
   setSpeakOutput(speak: boolean): void {
     this.update({ speakOutput: speak });
     this.engine?.setSpeakOutput(speak);
+  }
+
+  setDualEarStereo(enabled: boolean): void {
+    if (this.state.dualEarStereo === enabled) return;
+    this.update({ dualEarStereo: enabled });
+    this.engine?.setDualEarStereo(enabled);
   }
 
   /**
@@ -304,6 +317,7 @@ export class SessionStore {
       translationEngine: this.state.translationEngine,
       ttsEngine: this.state.ttsEngine,
       apiKeys: this.state.apiKeys,
+      dualEarStereo: this.state.dualEarStereo,
     };
     return createEngineRouter(opts);
   }

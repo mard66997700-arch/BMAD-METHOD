@@ -61,6 +61,11 @@ export interface EngineFactoryOptions {
   translationEngine?: TranslationEngineId;
   ttsEngine?: TtsEngineId;
   apiKeys?: RuntimeApiKeys;
+  /**
+   * Stereo dual-ear: route the captured source audio to the left ear and
+   * the synthesized translation to the right ear.
+   */
+  dualEarStereo?: boolean;
 }
 
 export function createEngineRouter(options: EngineFactoryOptions): EngineRouter {
@@ -88,6 +93,7 @@ export function createEngineRouter(options: EngineFactoryOptions): EngineRouter 
     targetLang: options.targetLang ?? DEFAULT_CONFIG.defaultTargetLang,
     voice: options.voice ?? DEFAULT_VOICE_SETTINGS,
     speakOutput: options.speakOutput,
+    dualEarStereo: options.dualEarStereo,
   } satisfies EngineRouterOptions);
   return router;
 }

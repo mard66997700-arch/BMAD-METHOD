@@ -17,12 +17,24 @@
  * `MockAudioPlaybackProvider` is sufficient for unit testing.
  */
 
+export type PlaybackPan = 'left' | 'right' | 'center';
+
 export interface PlaybackChunk {
   id: string;
   /** PCM samples. The provider determines sample rate; default 24 kHz. */
   samples: Int16Array;
   /** Sample rate in Hz; default 24 000 (matches typical TTS output). */
   sampleRateHz?: number;
+  /**
+   * Optional stereo panning hint. Providers that support it pan the
+   * playback to the given channel; providers that don't fall back to
+   * mono. Default: 'center'.
+   */
+  pan?: PlaybackPan;
+}
+
+export interface PlaybackOptions {
+  pan?: PlaybackPan;
 }
 
 export type PlaybackEvent =
@@ -38,8 +50,15 @@ export interface AudioPlaybackProvider {
    * playback completes. The provider must support cooperative cancellation
    * via the supplied AbortSignal — when aborted, it must fade out within
    * `cancelFadeMs` and resolve.
+   *
+   * Optional `options.pan` hints stereo channel routing for dual-ear modes.
    */
-  playSamples(samples: Int16Array, sampleRateHz: number, signal: AbortSignal): Promise<void>;
+  playSamples(
+    samples: Int16Array,
+    sampleRateHz: number,
+    signal: AbortSignal,
+    options?: PlaybackOptions,
+  ): Promise<void>;
 }
 
 export interface PlaybackQueueOptions {
@@ -147,6 +166,7 @@ export class AudioPlaybackQueue {
           entry.chunk.samples,
           entry.chunk.sampleRateHz ?? 24_000,
           entry.abort.signal,
+          { pan: entry.chunk.pan },
         );
       } catch (e) {
         if ((e as Error)?.name === 'AbortError' || entry.abort.signal.aborted) {
@@ -176,26 +196,36 @@ export class AudioPlaybackQueue {
  * captures the played samples so tests can assert on them.
  */
 export class MockAudioPlaybackProvider implements AudioPlaybackProvider {
-  readonly played: Array<{ samples: Int16Array; sampleRateHz: number; cancelled: boolean }> = [];
+  readonly played: Array<{
+    samples: Int16Array;
+    sampleRateHz: number;
+    cancelled: boolean;
+    pan?: PlaybackPan;
+  }> = [];
   /** If set, simulate a non-zero playback duration before resolving. */
   playbackDurationMs = 0;
   /** Optional test hook called immediately when playSamples starts. */
   onStart: (() => void) | null = null;
 
-  async playSamples(samples: Int16Array, sampleRateHz: number, signal: AbortSignal): Promise<void> {
+  async playSamples(
+    samples: Int16Array,
+    sampleRateHz: number,
+    signal: AbortSignal,
+    options?: PlaybackOptions,
+  ): Promise<void> {
     if (this.onStart) this.onStart();
     if (this.playbackDurationMs === 0) {
-      this.played.push({ samples, sampleRateHz, cancelled: false });
+      this.played.push({ samples, sampleRateHz, cancelled: false, pan: options?.pan });
       return;
     }
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.played.push({ samples, sampleRateHz, cancelled: false });
+        this.played.push({ samples, sampleRateHz, cancelled: false, pan: options?.pan });
         resolve();
       }, this.playbackDurationMs);
       signal.addEventListener('abort', () => {
         clearTimeout(timer);
-        this.played.push({ samples, sampleRateHz, cancelled: true });
+        this.played.push({ samples, sampleRateHz, cancelled: true, pan: options?.pan });
         const err = new Error('aborted');
         err.name = 'AbortError';
         reject(err);

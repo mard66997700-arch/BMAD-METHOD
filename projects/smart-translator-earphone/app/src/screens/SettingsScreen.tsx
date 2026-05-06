@@ -193,6 +193,22 @@ export function SettingsScreen() {
             thumbColor={state.speakOutput ? COLORS.primary : COLORS.surface}
           />
         </View>
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleTextBlock}>
+            <Text style={styles.toggleLabel}>Stereo dual-ear (original L / translation R)</Text>
+            <Text style={styles.helpSmall}>
+              Original audio plays in your left ear; translation in your right ear. Best with
+              wired stereo earphones. Browser TTS plays from both ears (limitation); paid TTS
+              providers honor the panning.
+            </Text>
+          </View>
+          <Switch
+            value={state.dualEarStereo}
+            onValueChange={(v) => sessionStore.setDualEarStereo(v)}
+            trackColor={{ false: COLORS.surfaceMuted, true: COLORS.primaryDark }}
+            thumbColor={state.dualEarStereo ? COLORS.primary : COLORS.surface}
+          />
+        </View>
       </Section>
 
       <Pressable
@@ -393,6 +409,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   toggleLabel: { color: COLORS.text, fontSize: 14, flex: 1, marginRight: 12 },
+  toggleTextBlock: { flex: 1, marginRight: 12, gap: 4 },
   help: { color: COLORS.textMuted, fontSize: 12, lineHeight: 18 },
   keyRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
   keyName: { color: COLORS.text, fontSize: 12 },

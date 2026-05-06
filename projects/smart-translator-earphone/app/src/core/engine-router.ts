@@ -68,6 +68,13 @@ export interface EngineRouterOptions {
    * Default: true.
    */
   speakOutput?: boolean;
+
+  /**
+   * Stereo dual-ear: when true, the captured source audio is monitored
+   * back to the left earphone and synthesized translations play in the
+   * right earphone. Default: false.
+   */
+  dualEarStereo?: boolean;
 }
 
 export class EngineRouter {
@@ -83,12 +90,15 @@ export class EngineRouter {
   private sourceLang: string | 'auto';
   private voice: VoiceSettings;
   private speakOutput: boolean;
+  private dualEarStereo: boolean;
+  private readonly capture: AudioCaptureProvider;
   private unsubPipeline: (() => void) | null = null;
   private unsubStt: (() => void) | null = null;
   private unsubPlayback: (() => void) | null = null;
 
   constructor(options: EngineRouterOptions) {
     this.pipeline = new AudioPipeline(options.capture, options.pipeline ?? {});
+    this.capture = options.capture;
     this.stt = new SttEngineRouter(options.stt);
     this.translation = new TranslationRouter(options.translation);
     this.tts = new TtsEngineRouter(options.tts);
@@ -97,7 +107,9 @@ export class EngineRouter {
     this.sourceLang = options.sourceLang;
     this.voice = options.voice ?? DEFAULT_VOICE_SETTINGS;
     this.speakOutput = options.speakOutput ?? true;
+    this.dualEarStereo = options.dualEarStereo ?? false;
     this.stt.setSourceLanguage(this.sourceLang);
+    this.applyMonitor();
   }
 
   on(listener: EngineEventListener): () => void {
@@ -125,6 +137,18 @@ export class EngineRouter {
   setSpeakOutput(speak: boolean): void {
     this.speakOutput = speak;
     if (!speak) this.playback.clear();
+  }
+
+  setDualEarStereo(enabled: boolean): void {
+    this.dualEarStereo = enabled;
+    this.applyMonitor();
+  }
+
+  private applyMonitor(): void {
+    const cap = this.capture as AudioCaptureProvider & { setMonitor?: (pan: 'left' | 'right' | null) => void };
+    if (typeof cap.setMonitor === 'function') {
+      cap.setMonitor(this.dualEarStereo ? 'left' : null);
+    }
   }
 
   async start(): Promise<void> {
@@ -237,7 +261,12 @@ export class EngineRouter {
         targetLang: translated.targetLang,
         voice: this.voice,
       });
-      this.playback.enqueue({ id: audio.id, samples: audio.samples, sampleRateHz: audio.sampleRateHz });
+      this.playback.enqueue({
+        id: audio.id,
+        samples: audio.samples,
+        sampleRateHz: audio.sampleRateHz,
+        pan: this.dualEarStereo ? 'right' : 'center',
+      });
     } catch (err) {
       this.emit({ type: 'error', stage: 'tts', error: err instanceof Error ? err : new Error(String(err)) });
     }

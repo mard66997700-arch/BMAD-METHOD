@@ -21,6 +21,7 @@ import type {
   FrameListener,
   StateListener,
 } from './audio-capture';
+import type { PlaybackPan } from './audio-playback';
 import { FRAME_SAMPLES, SAMPLE_RATE_HZ, type AudioFrame } from './audio-types';
 import { concatFloat32, downsampleFloat32, floatToInt16 } from './web-audio-utils';
 
@@ -52,11 +53,25 @@ export class WebAudioCaptureProvider implements AudioCaptureProvider {
   private context: AudioContext | null = null;
   private node: ScriptProcessorNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
+  private monitorGain: GainNode | null = null;
+  private monitorPanner: StereoPannerNode | null = null;
+  private monitorPan: PlaybackPan | null = null;
   private leftover = new Float32Array(0);
   private seq = 0;
   private startMs = 0;
 
   constructor(private readonly opts: WebAudioCaptureOptions = {}) {}
+
+  /**
+   * Enable/disable a real-time monitor that routes the captured mic audio
+   * back to the user's earphones, optionally panned to a single channel.
+   * Useful for stereo dual-ear modes where the original audio plays in one
+   * ear and the translated TTS plays in the other. Pass `null` to disable.
+   */
+  setMonitor(pan: PlaybackPan | null): void {
+    this.monitorPan = pan;
+    this.applyMonitor();
+  }
 
   /**
    * Update the desired input device. Takes effect on the next `start()`.
@@ -95,6 +110,7 @@ export class WebAudioCaptureProvider implements AudioCaptureProvider {
       this.node.onaudioprocess = (event: AudioProcessingEvent) => this.handleBuffer(event);
       this.source.connect(this.node);
       this.node.connect(this.context.destination);
+      this.applyMonitor();
       this.seq = 0;
       this.startMs = Date.now();
       this.transition('capturing');
@@ -119,12 +135,51 @@ export class WebAudioCaptureProvider implements AudioCaptureProvider {
     if (this.mediaStream) {
       for (const t of this.mediaStream.getTracks()) t.stop();
     }
+    try {
+      this.monitorGain?.disconnect();
+      this.monitorPanner?.disconnect();
+    } catch {
+      // ignore
+    }
+    this.monitorGain = null;
+    this.monitorPanner = null;
     this.node = null;
     this.source = null;
     this.context = null;
     this.mediaStream = null;
     this.leftover = new Float32Array(0);
     this.transition('idle');
+  }
+
+  private applyMonitor(): void {
+    if (!this.context || !this.source) return;
+    // Tear down any existing monitor first.
+    try {
+      this.monitorGain?.disconnect();
+      this.monitorPanner?.disconnect();
+    } catch {
+      // ignore
+    }
+    this.monitorGain = null;
+    this.monitorPanner = null;
+    if (!this.monitorPan) return;
+    const ctx = this.context;
+    const gain = ctx.createGain();
+    // Slight attenuation so monitored mic doesn't overwhelm TTS in the
+    // other ear.
+    gain.gain.value = 0.7;
+    this.monitorGain = gain;
+    if (typeof ctx.createStereoPanner === 'function' && this.monitorPan !== 'center') {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = this.monitorPan === 'left' ? -1 : 1;
+      this.source.connect(gain);
+      gain.connect(panner);
+      panner.connect(ctx.destination);
+      this.monitorPanner = panner;
+    } else {
+      this.source.connect(gain);
+      gain.connect(ctx.destination);
+    }
   }
 
   onFrame(listener: FrameListener): () => void {

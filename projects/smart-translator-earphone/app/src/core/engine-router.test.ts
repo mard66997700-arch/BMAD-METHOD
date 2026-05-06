@@ -86,6 +86,66 @@ describe('EngineRouter (E2E across Epics 1-4 with mock providers)', () => {
     expect(events.some((e) => e.type === 'playback-start')).toBe(false);
   });
 
+  test('dualEarStereo pans TTS playback to right channel', async () => {
+    const capture = new MockAudioCaptureProvider();
+    const playback = new MockAudioPlaybackProvider();
+    const router = new EngineRouter({
+      capture,
+      playback,
+      pipeline: {
+        vad: { minSpeechMs: 60, minSilenceMs: 200 },
+        chunker: { chunkMs: 300, maxChunkMs: 600 },
+        onlyVoicedFramesToChunker: true,
+        highPass: false,
+      },
+      stt: { providers: [new MockSttProvider()] },
+      translation: { providers: [new MockTranslationProvider()] },
+      tts: { providers: [new MockTtsProvider()] },
+      sourceLang: 'en',
+      targetLang: 'es',
+      dualEarStereo: true,
+    });
+    await router.start();
+    capture.pushSamples(buildSpeechSamples(10));
+    capture.pushSamples(buildSilenceSamples(15));
+    await new Promise((r) => setTimeout(r, 50));
+    await router.stop();
+
+    // All TTS chunks should be panned right.
+    expect(playback.played.length).toBeGreaterThan(0);
+    for (const entry of playback.played) {
+      expect(entry.pan).toBe('right');
+    }
+  });
+
+  test('setDualEarStereo calls capture.setMonitor', () => {
+    const capture = new MockAudioCaptureProvider();
+    const monitorCalls: Array<string | null> = [];
+    (capture as unknown as { setMonitor: (p: string | null) => void }).setMonitor = (
+      pan: string | null,
+    ) => {
+      monitorCalls.push(pan);
+    };
+    const playback = new MockAudioPlaybackProvider();
+    const router = new EngineRouter({
+      capture,
+      playback,
+      stt: { providers: [new MockSttProvider()] },
+      translation: { providers: [new MockTranslationProvider()] },
+      tts: { providers: [new MockTtsProvider()] },
+      sourceLang: 'en',
+      targetLang: 'es',
+    });
+    // Initially monitor is disabled (constructor calls applyMonitor once).
+    expect(monitorCalls).toContain(null);
+
+    router.setDualEarStereo(true);
+    expect(monitorCalls).toContain('left');
+
+    router.setDualEarStereo(false);
+    expect(monitorCalls[monitorCalls.length - 1]).toBe(null);
+  });
+
   test('AudioPipeline integration', () => {
     // Sanity check that AudioPipeline is wired to capture without throwing.
     const capture = new MockAudioCaptureProvider();
