@@ -193,6 +193,172 @@ For every story below:
   Vitest 6+ cases.
 - **Size:** M (~3 days).
 
+### Tier 1.5 — SOV-language quality (added 2026-05-07)
+
+> Stories added after the SOV / streaming pipeline review on
+> 2026-05-07 (see `adrs/ADR-006.md`, `adrs/ADR-007.md`,
+> `research/zero-key-viability.md` §4.5 and §10). The numbering
+> EXT-08.5 / EXT-08.7 reflects the architectural sequencing
+> documented in ADR-006: these stories *must* run before EXT-09,
+> and EXT-08.7 may run in parallel with EXT-08.5 in the same
+> sprint. **EXT-09 has a hard ordering dependency on EXT-08.5
+> shipping first.**
+
+#### EXT-08.5 · Whisper-base swap for ja / ko / zh · S
+
+- **Actor:** End user with Phase B active on a JA/KO/ZH source
+  language.
+- **Outcome:** STT accuracy on JA/KO/ZH is materially better;
+  hallucination frequency drops; per-language CER is measured
+  to inform EXT-09 thresholds.
+- **Given/When/Then:**
+  - **Given** the active provider resolves to `whisper-wasm`
+    and the source language detection is `ja`, `ko`, or `zh`,  
+    **When** the offscreen document loads the model,  
+    **Then** `Xenova/whisper-base` is fetched (≈115 MB total
+    bundle including current 40 MB tiny) instead of
+    `Xenova/whisper-tiny`,  
+    **And** the swap happens lazily (no pre-fetch on install),  
+    **And** the popup status shows
+    "Loading whisper-base model (better quality for ja/ko/zh)",  
+    **And** for any other source language the model stays at
+    `whisper-tiny` (no extra download).
+  - **Given** EXT-08.5 has shipped to the dev team,  
+    **When** the team runs the per-language WER benchmark from
+    BA-02 against a 30-second held-out clip in each of ja, ko,
+    zh,  
+    **Then** WER and CER are recorded in
+    `_bmad-output/test-evidence/whisper-base-cer.md`,  
+    **And** the values are referenced by EXT-09's regex
+    threshold tuning.
+- **FR/NFR:** FR-2 (Phase B), NFR-PRIVACY (still 100 % local).
+- **Deps:** none for shipping; BA-02 must be running concurrently
+  to produce CER numbers for EXT-09's downstream tuning.
+- **Definition of Done:** `whisper-wasm.js` accepts a model name,
+  routes to base when source language matches; Vitest 4+ cases;
+  CER doc committed.
+- **Size:** S (~half day).
+- **Hard dependency for EXT-09:** EXT-09 cannot start until
+  this story is merged and CER numbers are recorded.
+
+#### EXT-08.7 · `kind=asr` + `isLive` Phase A fallback · S
+
+- **Actor:** End user watching a YouTube live stream where
+  YouTube has only auto-generated captions (the SOV-on-live
+  edge case identified in `research/zero-key-viability.md` §3.6
+  and ADR-006 Layer 1).
+- **Outcome:** The `auto` provider correctly routes live
+  auto-captioned streams to Phase B (Whisper-WASM) instead of
+  reading captions that may be cut mid-sentence.
+- **Given/When/Then:**
+  - **Given** the user is on a YouTube watch page,  
+    **And** `ytInitialPlayerResponse` is parsed,  
+    **And** the chosen `captionTrack.kind === 'asr'`,  
+    **And** `videoDetails.isLive === true`,  
+    **When** the auto router decides which provider to use,  
+    **Then** Phase A is bypassed and Phase B is selected,  
+    **And** the popup status shows "Live auto-captions detected
+    — switching to Whisper-WASM for SOV safety".
+  - **Given** any of the above fields is missing or undefined
+    (`ytInitialPlayerResponse` is an undocumented internal API
+    and may drift),  
+    **When** the auto router runs,  
+    **Then** the code does **not** throw,  
+    **And** falls back to the existing default behavior (try
+    Phase A first, fall back to Phase B if it errors).
+- **FR/NFR:** FR-2, FR-3.
+- **Deps:** none.
+- **Definition of Done:** `lib/youtube-captions.js` exposes a
+  `shouldFallbackToPhaseB(playerResponse)` pure function with
+  defensive optional chaining; Vitest 5+ cases covering: live
+  ASR (returns true), live manual (returns false), VOD ASR
+  (returns false), missing fields (returns false), null input
+  (returns false).
+- **Size:** S (~2 hours).
+- **Sprint placement:** parallel with EXT-08.5; same sprint.
+
+#### EXT-09 · Dual-trigger commit (audio VAD + text SFP regex) for SOV · M
+
+- **Actor:** End user with Phase B active on a JA/KO/ZH source
+  language.
+- **Outcome:** SOV-language commit boundaries respect grammar
+  (verb at end), eliminating negation-bomb mistranslations.
+  Latency stays bounded even on continuous speech (lectures,
+  podcasts).
+- **Given/When/Then:**
+  - **Given** the active provider is `whisper-wasm` and source
+    language ∈ {ja, ko, zh, de},  
+    **When** the audio capture pipeline runs,  
+    **Then** an energy-based VAD module in `audio-capture.js`
+    closes a chunk on continuous silence ≥ 250 ms (chunk size
+    ≥ 1 s minimum),  
+    **And** when Whisper emits text the SFP regex
+    `/(です|ます|だ|だった|だろう|요|입니다|니다|습니다|[。！？])$/`
+    runs against the trailing 200 chars,  
+    **And** the chunk commits when **either** signal fires
+    (OR-rule).
+  - **Given** the user is watching a lecture-style continuous
+    speech with no natural pauses,  
+    **When** the speaker continues for 30 seconds,  
+    **Then** chunks commit at SFP boundaries even though no
+    silence trigger fires,  
+    **And** worst-case observed latency stays ≤ 8 s (vs the
+    ≥ 10 s a sentence-buffered alternative would produce per
+    ADR-007).
+  - **Given** the user is watching conversational content,  
+    **When** the speaker pauses naturally,  
+    **Then** chunks commit at silence boundaries,  
+    **And** end-to-end latency is ≤ 7 s on JA/KO.
+- **FR/NFR:** FR-2 (per-language NFR-LATENCY exception
+  documented in PRD).
+- **Deps:** **EXT-08.5 must be merged and CER measured first.**
+  This is a hard ordering constraint — see ADR-006 §Layer 2 and
+  ADR-007.
+- **Definition of Done:**
+  - `audio-capture.js` exposes an `EnergyVad` class (~50 LOC,
+    pure JS, no model file) with adjustable threshold;
+  - `whisper-wasm.js` integrates VAD chunking;
+  - `translator-pipeline.js` integrates SFP regex with the
+    OR-rule commit logic;
+  - Vitest 12+ cases covering: silence trigger only, SFP
+    trigger only, both fire simultaneously, neither fires
+    (timeout), language-specific regex variants, and continuous
+    speech scenario;
+  - Field evidence recorded at
+    `_bmad-output/test-evidence/ext-09-sov-latency.md`
+    with at least 3 JA, 3 KO, 3 ZH videos.
+- **Size:** M (~3 days, gated by EXT-08.5).
+
+#### EXT-09b · Sentence-buffered MT mode (ship-fast bridge, optional) · S-M
+
+- **Actor:** Engineering — only invoked if EXT-09 slips past
+  sprint week 3.
+- **Outcome:** SOV-language users see commit-correct (no
+  negation-bomb) translation while EXT-09 finishes, accepting
+  worse latency on continuous content.
+- **Given/When/Then:**
+  - **Given** EXT-09 is not yet merged at week 3 of the sprint,  
+    **When** the team enables EXT-09b instead,  
+    **Then** `translator-pipeline.js` accumulates STT text in
+    a buffer for SOV languages,  
+    **And** flushes on **any** of: terminal punctuation
+    `[。！？다.]`, audio silence ≥ 2 s, buffer length ≥ 200
+    chars,  
+    **And** the popup shows a status badge
+    "ja/ko/zh sentence-buffered mode — latency may exceed 10 s
+    on continuous content",  
+    **And** EXT-09 still ships within v1 (this is a bridge,
+    not a substitute — see ADR-007).
+- **FR/NFR:** FR-2.
+- **Deps:** none.
+- **Definition of Done:** Buffer logic in
+  `translator-pipeline.js`; popup badge string in
+  `i18n/messages.json`; Vitest 6+ cases; user-visible status
+  documented in `prd-v1-free-only.md` UX section.
+- **Size:** S-M (~1.5 days).
+- **Status:** **Optional.** Do not start unless EXT-09 has
+  slipped per the rule above.
+
 ### Tier 2 — release readiness (parallelizable, end of sprint)
 
 #### EXT-07 · Chrome Web Store packaging script · M
@@ -295,6 +461,10 @@ For every story below:
 | EXT-04 | Loading-model badge | 1 | S | — | Dev |
 | EXT-05 | Engine status persistence | 1 | S | — | Dev |
 | EXT-06 | Telemetry buffer | 1 | M | — | Dev |
+| EXT-08.5 | Whisper-base swap (ja/ko/zh) | 1.5 | S | BA-02 concurrent | Dev |
+| EXT-08.7 | Live + asr Phase A fallback | 1.5 | S | — | Dev |
+| EXT-09 | Dual-trigger commit (audio VAD + SFP) | 1.5 | M | **EXT-08.5 hard dep** | Dev |
+| EXT-09b | Sentence-buffered MT mode (bridge, optional) | 1.5 | S-M | — (only if EXT-09 slips) | Dev |
 | EXT-07 | Web Store package script | 2 | M | — | Dev |
 | EXT-08 | Web Store listing | 2 | M | EXT-07 + dev account | Tuan |
 | MOB-01 | Persist mic / source | 3 | S | — | Dev |
@@ -305,8 +475,12 @@ For every story below:
 | BA-04 | Mobile STT comparison | 4 | M | — | Mary |
 
 **Sprint capacity** assuming 1 dev + 1 user (Tuan as field tester
-+ release manager): 14 stories, total ≈ 28 dev-days + 5 Tuan-days
-+ research in parallel (no contention). Realistic in 4 weeks.
++ release manager): 17 stories in scope (EXT-09b kept as optional
+bridge). Total ≈ 32–34 dev-days + 5 Tuan-days + research in
+parallel (no contention). Realistic in 4–5 weeks. The Tier 1.5
+SOV stories add ≈ 4 dev-days (S + S + M with EXT-09 gated on
+EXT-08.5); they are not optional for v1 because they unblock
+JA/KO/ZH users (~25 % of target audience per BA-02).
 
 ---
 
@@ -331,6 +505,9 @@ For every story below:
 | P-02 | Web Speech API quality on tonal languages (VN, TH) is poor | Mary BA-04 covers; if poor, popup shows "Use whisper-wasm for VN/TH" warning |
 | P-03 | Tuan blocked on hardware verification (EXT-01) | Devin can run the extension locally on the user's behalf if user pairs sessions; otherwise EXT-01 sits in "blocked" until hardware available |
 | P-04 | Free Google MT endpoint changes shape | Mary BA-03 produces a contract-test fixture; CI runs it daily once Actions enabled |
+| P-05 | EXT-09 (dual-trigger commit) effort overruns | EXT-09b documented as ship-fast bridge per ADR-007. If EXT-09 slips past sprint week 3, ship EXT-09b with documented latency-degradation status badge |
+| P-06 | Whisper-base swap regresses small-model latency | EXT-08.5 is lazy (only ja/ko/zh); SVO users unaffected. CER measurement in EXT-08.5 gates EXT-09 from starting with bad data |
+| P-07 | `ytInitialPlayerResponse` shape drift | EXT-08.7 includes defensive optional chaining + null returns; CI contract test against snapshot (per BA-01 follow-up) |
 
 ---
 
@@ -345,7 +522,13 @@ do not gate this sprint.
 > **— Sarah 🗂️ PO**
 >
 > The backlog is ready. Pull EXT-01 first as the gating story; once
-> verified, the dev team can fan out across EXT-02 → EXT-08 in
-> parallel while Tuan handles MOB-02 + EXT-08 listing in parallel.
-> Mary's research is independent and runs end-to-end without
-> blocking anyone.
+> verified, the dev team can fan out across EXT-02 → EXT-06 in
+> parallel while Tuan handles EXT-07/08 packaging + listing.
+> The Tier 1.5 SOV stories (EXT-08.5 → EXT-08.7 → EXT-09) run
+> on their own track inside the sprint with **EXT-08.5 as the
+> hard gate** for EXT-09; EXT-08.7 may run in parallel with
+> EXT-08.5. EXT-09b is preserved as a documented bridge per
+> ADR-007 and only activates if EXT-09 slips. Mary's research
+> is independent and runs end-to-end without blocking anyone;
+> BA-02's per-language WER numbers feed EXT-08.5's CER doc and
+> EXT-09's regex thresholds, so BA-02 should run in week 1.

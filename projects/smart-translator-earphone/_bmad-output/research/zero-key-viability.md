@@ -125,6 +125,27 @@ Whisper-WASM fallback. Add a contract test that hits a known
 public video once per day in CI (when GH Actions is enabled) so
 we know if YouTube changes the response shape.
 
+### 3.6 Edge case — live streams with auto-generated captions
+
+Phase A is **not safe** for live streams that rely on YouTube's
+internal streaming ASR. Auto-generated captions on live
+broadcasts cut mid-sentence on JA/KO/ZH for the same root
+reason Phase B does (verb-final grammar + streaming pipeline).
+Detection from `ytInitialPlayerResponse`:
+
+- `captionTrack.kind === 'asr'` — auto-generated track
+- `videoDetails.isLive === true` — currently live broadcast
+
+When **both** are present, the `auto` provider must bypass
+Phase A and use Phase B (Whisper-WASM) instead. This is story
+**EXT-08.7** in the v2 backlog (effort S, with a defensive
+acceptance criterion for missing/undefined fields since
+`ytInitialPlayerResponse` is an undocumented internal API).
+
+VOD content with manual or pre-processed captions is unaffected
+and represents ≈99 % of typical viewing time. Live JA/KO content
+is the only segment routed away from Phase A.
+
 ---
 
 ## 4. BA-02 — Whisper-tiny multi-language accuracy
@@ -204,11 +225,43 @@ expectations per language:
   recommended for this language."
 - **Red** (poor without fine-tune): ja, ko, zh — popup shows
   "Tip: Whisper-tiny is less accurate for this language. Try
-  YouTube captions or use Advanced → paid Whisper API."
+  YouTube captions or use Advanced → paid Whisper API." For
+  story EXT-08.5, the v1 plan **swaps to Whisper-base** for
+  these three languages specifically (lazy-loaded, +75 MB
+  model, only when source language is detected as ja/ko/zh).
 
 This gating ships in v1 but is informed by the Phase 2 benchmark.
 If Phase 2 numbers differ materially, the gating rules update
 in v1.0.1.
+
+### 4.5 Whisper hallucination — characteristic to plan around
+
+A second-order risk identified during the 2026-05-07 ADR review:
+**Whisper-tiny tends to emit fabricated sentence-final particles
+(`です。`, `요.`)** when the model is uncertain (noisy audio,
+rare vocabulary). At CER 32.7 on JA, the hallucination rate is
+high enough that any text-trigger commit logic (e.g., the
+text-layer SFP regex described in ADR-006 §Layer 2) will be
+fooled into committing on fabricated content.
+
+**Mitigations** (codified in ADR-006 / ADR-007):
+
+1. **Audio-layer VAD as independent commit signal.** Energy-based
+   silence detection on PCM does not depend on Whisper output and
+   is not fooled by hallucination.
+2. **Hard ordering dependency: EXT-08.5 → EXT-09.** The Whisper-
+   base swap must ship and per-language CER must be measured
+   *before* the dual-trigger commit logic is finalized. This
+   avoids tuning regex thresholds against tiny-model noise.
+3. **Field-report instrumentation.** During EXT-01 live
+   verification, observers should explicitly look for
+   "translation appears on text the user did not say" and report
+   it with the original audio + transcript so we can characterize
+   hallucination frequency in production.
+
+This pattern is consistent across Whisper variants (tiny → base →
+small → medium); larger models hallucinate less but never zero.
+Architectural compensation (audio-VAD cross-check) is durable.
 
 ---
 
@@ -359,21 +412,44 @@ If any one of these breaks, the rest are unaffected. That's a
 strength of Option A's architecture — the free path is
 **defense-in-depth**, not a single fragile dependency.
 
-### 7.2 Marketing positioning
+### 7.2 Marketing positioning — privacy claims, precise
 
-The privacy story is unusually strong:
+The privacy story is unusually strong, but each provider has a
+**different** privacy profile and marketing must distinguish
+them carefully or risk losing trust with paranoid users.
 
-- Mobile (Apple Speech with on-device flag): audio never leaves
-  device.
-- Extension Phase A (YouTube captions): we read text that's
-  already public.
-- Extension Phase B (Whisper-WASM): everything runs in the user's
-  own browser; no audio leaves device.
-- Extension Phase WSP (Web Speech): audio is sent to Chrome's
-  recognizer (Google), but no other intermediary.
+| Provider | Audio leaves device? | New server exposure introduced by *us*? | What we can claim |
+|---|---|---|---|
+| Mobile native STT (iOS Speech.framework with on-device flag enabled) | No | None | "Audio never leaves your device" |
+| Mobile native STT (default cloud mode) | Yes — to Apple / Google | None (the OS does it, not us) | "We don't operate any STT server" |
+| Extension Phase A (YouTube captions) | Already at YouTube before we touch it | None — we read existing public captions | "We add no server beyond YouTube itself; the translation is computed in your browser" |
+| Extension Phase B (Whisper-WASM) | No | None | "Audio + translation never leave your browser" |
+| Extension Phase WSP (Web Speech API) | Yes — to the browser's recognizer (Google in Chrome) | None — the browser does it, not us | "We add no audio destination beyond your browser's built-in recognizer" |
+
+The **strongest** claim ("audio never leaves your browser") is
+**only** valid for **Phase B**. For Phase A, the user's audio is
+already at YouTube *because they chose to watch a YouTube video*;
+we don't add to that exposure but we also don't reduce it. For
+Phase WSP, the browser's recognizer is the same one already in
+the OS, so we don't introduce a new vendor relationship — but
+audio does leave the device.
+
+**Concrete marketing copy:**
+
+- Top-line tagline: "Translate any tab without API keys.
+  Computation happens in your browser."
+- For privacy-focused audiences: emphasize Phase B
+  ("Whisper-WASM mode: audio never leaves your browser").
+- For broad audiences: emphasize Phase A
+  ("YouTube mode: zero new server exposure, sub-second
+  latency").
+- Avoid ambiguous claims like "100 % local" without specifying
+  which provider; users discovering Phase WSP later will lose
+  trust if the claim is over-broad.
 
 Compare to most paid competitors who route audio through their
-own servers + OpenAI / Google. This is a clear marketing point.
+own servers + OpenAI / Google. This is a clear marketing point —
+**when made precisely**.
 
 ### 7.3 Risk of regulatory / EU AI Act exposure
 
@@ -420,6 +496,134 @@ Preview of changes:
 - **Tuan:** Phase 2 benchmarks need ~10 hours of dev hardware
   time. Can be batched into one weekend if you want it done
   fast, or spread over the sprint.
+
+---
+
+## 10. Industry context — streaming pipelines and SOV languages
+
+> Added 2026-05-07 after Tuan asked how the broader translation
+> industry handles the streaming pipeline and SOV (Japanese /
+> Korean / Chinese / German subordinate) grammar challenges.
+> This section is informational; the architectural conclusions
+> are codified in `adrs/ADR-006.md`.
+
+### 10.1 Sequential vs streaming pipelines
+
+The "classical" sequential pipeline (record full utterance →
+STT → MT → TTS) introduces ~3 s of unavoidable latency per
+chunk and is what `extension/lib/whisper-wasm.js` currently
+does at chunk granularity.
+
+Modern streaming pipelines used by translation glasses
+(Leion Hey2, RayNeo) and cloud APIs (Azure Speech Translation,
+Google Translate API streaming) operate on **partial hypotheses**:
+
+- STT emits `partial` events as the model decodes; MT consumes
+  these and produces tentative translations.
+- A small **commit buffer** holds the last N tokens. Each
+  partial extends or revises the buffer.
+- TTS only speaks committed tokens — those that the MT model
+  is "confident enough" won't change.
+
+A non-streaming TTS adds **up to 4.2 s** to the perceived
+latency on its own (per Deepgram's benchmark). Streaming TTS
+is what brings end-to-end latency on translation glasses to
+the marketing-claimed ~500 ms.
+
+**Where this project sits:**
+
+| Path in this codebase | Pipeline style | Realistic latency |
+|---|---|---|
+| Mobile (`expo-speech-recognition`) | Streaming-ish (OS provides partials; MT runs on `final`) | 1.5–2 s |
+| Extension Phase A (YouTube captions) | "Pre-streamed" — captions arrive pre-chunked with timestamps | 0.5–1 s |
+| Extension Phase B (Whisper-WASM) | **Sequential** at 4 s chunk granularity | 5–7 s |
+| Extension Phase WSP (Web Speech API) — NEW per FR-WSP | Streaming (browser-native) | < 2 s expected |
+
+Phase B is the weak link. ADR-006 §Layer 2 prescribes
+VAD-aware chunking + commit-delay to soften this; story EXT-09
+in the backlog implements it.
+
+### 10.2 The SOV problem
+
+Japanese, Korean, Mandarin (as spoken in casual register), and
+German subordinate clauses place the **verb at the end** of
+the sentence. Concrete failure modes:
+
+- **Verb-final ambiguity (Japanese).** `私は寿司を…` ("I …
+  sushi") can resolve to `食べたい` (want to eat), `食べない`
+  (won't eat), `食べた` (ate), or `食べすぎた` (ate too
+  much) — entirely different meanings.
+- **Negation bomb (Korean).** `아주 좋아…` sounds affirmative
+  ("really like…") until `…하지 않아요` is appended at the
+  end and flips the meaning to "don't really like." TTS that
+  has already played the affirmative cannot be retracted.
+- **German subordinate clauses.** `Ich weiß, dass er Sushi
+  essen will` — `will` (the verb) is at the end of the
+  subordinate clause.
+
+These are an **open problem in NLP**. The state of the art at
+IWSLT 2025 (CUNI SimulStreaming, arxiv 2503.13745) reports
+that JA/ZH simultaneous translation is only viable at
+"high-latency" mode (4–5 s). "Low-latency" (500 ms) mode is
+disabled by configuration for these language pairs.
+
+### 10.3 What commercial products do
+
+| Product | SOV strategy |
+|---|---|
+| Leion Hey2 / LLVision (translation glasses) | Higher commit-delay for JA/KO/ZH (+200–400 ms vs EN) — undocumented but observable |
+| RayNeo (translation glasses) | Same as Leion; prefers text-on-display over TTS for SOV |
+| Azure Speech Translation | "Automatic break points optimized per language pair" — undocumented |
+| Deepgram Nova-3 | 27 % WER reduction on Korean via syllable-block segmentation; STT only, no MT |
+| Whisper + LLM (e.g. Nova-3 → GPT-4o) | Best accuracy via context-aware MT; latency 2–3 s, OK for subtitles, bad for TTS |
+
+**Common pattern:** prefer **text on display** over **speech
+output** for SOV because text can be silently revised when the
+verb resolves; speech cannot be unspoken.
+
+### 10.4 What this project will do (per ADR-006)
+
+Three layers:
+
+1. **Phase A (YouTube captions)** — already pre-segmented, no
+   SOV problem. Recommend it as primary for ja/ko/zh.
+2. **Phase B (Whisper-WASM)** — story EXT-09 adds VAD-aware
+   chunking + commit-delay buffer for ja/ko/zh/de.
+3. **Caption-only mode (v1.1)** — popup option to disable TTS
+   for ja/ko/zh, fall back to dual-ear stereo + text panel
+   only. Matches what translation glasses do.
+
+This keeps the marketing message honest: we don't claim "real-
+time translation" for SOV in a single number; we publish two
+numbers (best case for Phase A, worst case for Phase B).
+
+### 10.5 Competitive positioning summary
+
+| Dimension | Translation glasses | This project |
+|---|---|---|
+| Pipeline | Streaming + commit-delay | Phase A: pre-segmented (excellent for VOD); Phase B: sequential → dual-trigger commit per ADR-006 |
+| Latency (EN) | 500–700 ms | Phase A: 0.5–1 s; Phase B: 5–7 s |
+| Latency (JA/KO) | 700–1100 ms | Phase A: 0.5–1 s VOD; Phase B: 6–7 s with EXT-09 |
+| Hardware | Custom glasses + 4-mic beamforming | Tab audio (zero hardware) |
+| Cost (one-time) | $300–1500 USD | $0 |
+| Cost (recurring) | Subscription tier varies | $0 in v1 |
+| Privacy | Audio routed through cloud STT + cloud MT | Phase B: audio never leaves browser. Phase A: no new server beyond YouTube. Phase WSP: audio sent to browser's built-in recognizer only. |
+
+**Conclusion.** This project does not compete on raw latency
+with $1500 hardware. It dominates on:
+
+- **Cost** ($0 vs subscription)
+- **Privacy** — but with **per-provider precision**, not a
+  blanket "100 % local" claim (see §7.2 for exact wording).
+  Phase B is the strongest privacy story; Phase A and Phase WSP
+  are merely "no new exposure beyond what already exists."
+- **Install friction** (Chrome Web Store install vs ordering
+  hardware)
+
+Marketing should lead with privacy + zero-cost rather than
+chasing the "500 ms" number that hardware vendors achieve only
+on EN→ZH. Use the precise per-provider wording from §7.2 so
+paranoid users do not catch the project in an over-broad claim.
 
 ---
 
