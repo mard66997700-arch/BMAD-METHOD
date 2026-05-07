@@ -5,7 +5,7 @@
  * via the steps in `TESTING.md`.
  */
 import { describe, expect, test, vi } from 'vitest';
-import { createTranslator } from '../lib/translator-pipeline.js';
+import { createCaptionTranslator, createTranslator } from '../lib/translator-pipeline.js';
 
 function defaultDeps(overrides = {}) {
   return {
@@ -205,5 +205,105 @@ describe('createTranslator — pipeline flow', () => {
     await t.flush();
 
     expect(deps.translate.mock.calls[0][0].sourceLang).toBe('sv');
+  });
+});
+
+describe('createCaptionTranslator (YouTube zero-key path)', () => {
+  function captionDeps(overrides = {}) {
+    return {
+      translate: vi.fn(async ({ text, targetLang }) => ({
+        text: `[${targetLang}] ${text}`,
+      })),
+      speak: vi.fn(),
+      report: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  test('runs translate → speak and emits partial+translation reports', async () => {
+    const deps = captionDeps();
+    const t = createCaptionTranslator({ sourceLang: 'auto', targetLang: 'vi' }, deps);
+
+    await t.onCaption({ text: 'Hello, world', lang: 'en', key: 'a' });
+
+    expect(deps.translate).toHaveBeenCalledWith({
+      text: 'Hello, world',
+      sourceLang: 'en',
+      targetLang: 'vi',
+      signal: undefined,
+    });
+    expect(deps.speak).toHaveBeenCalledWith('[vi] Hello, world', 'vi');
+    expect(deps.report.mock.calls.map((c) => c[0].kind)).toEqual(['partial', 'translation']);
+  });
+
+  test('skips empty / whitespace-only captions', async () => {
+    const deps = captionDeps();
+    const t = createCaptionTranslator({ sourceLang: 'auto', targetLang: 'vi' }, deps);
+
+    await t.onCaption({ text: '   ', lang: 'en' });
+    await t.onCaption({ text: '', lang: 'en' });
+
+    expect(deps.translate).not.toHaveBeenCalled();
+    expect(deps.report).not.toHaveBeenCalled();
+  });
+
+  test('deduplicates back-to-back identical captions', async () => {
+    const deps = captionDeps();
+    const t = createCaptionTranslator({ sourceLang: 'auto', targetLang: 'vi' }, deps);
+
+    await t.onCaption({ text: 'foo', lang: 'en', key: 'k1' });
+    await t.onCaption({ text: 'foo', lang: 'en', key: 'k1' });
+    await t.onCaption({ text: 'foo', lang: 'en', key: 'k2' });
+
+    expect(deps.translate).toHaveBeenCalledTimes(2);
+  });
+
+  test('honours config.tts === false: no speak call but translation still reported', async () => {
+    const deps = captionDeps();
+    const t = createCaptionTranslator({ sourceLang: 'auto', targetLang: 'vi', tts: false }, deps);
+
+    await t.onCaption({ text: 'Hello', lang: 'en' });
+
+    expect(deps.translate).toHaveBeenCalledTimes(1);
+    expect(deps.speak).not.toHaveBeenCalled();
+    expect(deps.report.mock.calls.find((c) => c[0].kind === 'translation')).toBeDefined();
+  });
+
+  test('reports an error when translate throws (non-abort)', async () => {
+    const deps = captionDeps({
+      translate: vi.fn(async () => {
+        throw new Error('translate boom');
+      }),
+    });
+    const t = createCaptionTranslator({ sourceLang: 'auto', targetLang: 'vi' }, deps);
+
+    await t.onCaption({ text: 'Hello', lang: 'en' });
+
+    expect(deps.report.mock.calls.find((c) => c[0].kind === 'error')).toBeDefined();
+    expect(deps.speak).not.toHaveBeenCalled();
+  });
+
+  test('does NOT report an error on AbortError', async () => {
+    const deps = captionDeps({
+      translate: vi.fn(async () => {
+        const err = new Error('aborted');
+        err.name = 'AbortError';
+        throw err;
+      }),
+    });
+    const t = createCaptionTranslator({ sourceLang: 'auto', targetLang: 'vi' }, deps);
+
+    await t.onCaption({ text: 'Hello', lang: 'en' });
+
+    expect(deps.report.mock.calls.find((c) => c[0].kind === 'error')).toBeUndefined();
+  });
+
+  test('falls back to config.sourceLang when caption has no lang', async () => {
+    const deps = captionDeps();
+    const t = createCaptionTranslator({ sourceLang: 'ja', targetLang: 'vi' }, deps);
+
+    await t.onCaption({ text: 'おはよう' });
+
+    expect(deps.translate.mock.calls[0][0].sourceLang).toBe('ja');
   });
 });

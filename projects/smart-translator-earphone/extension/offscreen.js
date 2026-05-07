@@ -4,6 +4,13 @@
  * `lib/translator-pipeline.js` so it can be unit-tested without the
  * `chrome.*` / `speechSynthesis` APIs.
  *
+ * Two engine paths share this document:
+ *   - PCM → STT → translate → speak (Whisper API / Google STT).
+ *   - YouTube captions → translate → speak (zero-key fast path).
+ *
+ * In both cases the captured tab audio is panned to the left ear so
+ * the right ear stays translation-dominant.
+ *
  * Manifest V3 service workers can't hold a `MediaStream`, hence the
  * offscreen document.
  */
@@ -11,11 +18,13 @@
 import { TabAudioCapture } from './lib/audio-capture.js';
 import { transcribeWithGoogle, transcribeWithWhisper } from './lib/stt.js';
 import { translateFree } from './lib/translate.js';
-import { SAMPLE_RATE_HZ, createTranslator } from './lib/translator-pipeline.js';
+import { SAMPLE_RATE_HZ, createCaptionTranslator, createTranslator } from './lib/translator-pipeline.js';
 
 let capture = null;
 let cancelToken = null;
 let translator = null;
+let captionTranslator = null;
+let activeProvider = null;
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.target !== 'offscreen') return false;
@@ -34,25 +43,60 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .catch((err) => sendResponse({ ok: false, error: err?.message }));
     return true;
   }
+  if (msg.type === 'yt-caption') {
+    if (captionTranslator) {
+      captionTranslator
+        .onCaption({
+          text: msg.text,
+          lang: msg.lang,
+          key: `${msg.startMs ?? 0}:${msg.text}`,
+        })
+        .catch((err) => report({ kind: 'error', message: err?.message ?? String(err) }));
+    }
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (msg.type === 'yt-captions-ready') {
+    report({ kind: 'status', state: 'listening', engine: 'youtube-captions' });
+    return false;
+  }
   return false;
 });
 
 async function start(streamId, config) {
   await stop();
   cancelToken = new AbortController();
-  translator = createTranslator(config, {
-    signal: cancelToken.signal,
-    transcribe: (pcm, signal) => runStt(pcm, config, signal),
-    translate: (args) => translateFree(args),
-    speak: (text, lang) => speakRight(text, lang),
-    report,
-  });
+  activeProvider = config.resolvedProvider ?? config.sttProvider;
+
+  if (activeProvider === 'youtube-captions') {
+    captionTranslator = createCaptionTranslator(config, {
+      signal: cancelToken.signal,
+      translate: (args) => translateFree(args),
+      speak: (text, lang) => speakRight(text, lang),
+      report,
+    });
+  } else {
+    translator = createTranslator(config, {
+      signal: cancelToken.signal,
+      transcribe: (pcm, signal) => runStt(pcm, config, signal),
+      translate: (args) => translateFree(args),
+      speak: (text, lang) => speakRight(text, lang),
+      report,
+    });
+  }
+
   capture = new TabAudioCapture();
   await capture.connect(streamId, {
     pan: config.dualEar ? 'left' : 'center',
-    onPcm: (pcm) => translator.onPcm(pcm),
+    onPcm: (pcm) => {
+      // In captions mode the PCM is only used for left-ear monitoring;
+      // discard it instead of feeding STT.
+      if (translator) translator.onPcm(pcm);
+    },
   });
-  report({ kind: 'status', state: 'listening' });
+  if (activeProvider !== 'youtube-captions') {
+    report({ kind: 'status', state: 'listening', engine: activeProvider });
+  }
 }
 
 async function stop() {
@@ -61,6 +105,8 @@ async function stop() {
   capture?.stop();
   capture = null;
   translator = null;
+  captionTranslator = null;
+  activeProvider = null;
   try {
     speechSynthesis.cancel();
   } catch {
@@ -70,7 +116,13 @@ async function stop() {
 }
 
 async function runStt(pcm, config, signal) {
-  if (config.sttProvider === 'whisper') {
+  if (config.resolvedProvider === 'whisper-wasm') {
+    // Whisper-WASM provider lives in lib/whisper-wasm.js (added in a
+    // follow-up commit). Until that ships, fall back to the paid
+    // engines if a key is present, otherwise raise.
+    throw new Error('Whisper-WASM provider not yet bundled — run `npm run build` and reload the extension');
+  }
+  if (config.resolvedProvider === 'whisper' || config.sttProvider === 'whisper') {
     return transcribeWithWhisper({
       pcm,
       sampleRateHz: SAMPLE_RATE_HZ,
