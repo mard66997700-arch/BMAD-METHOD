@@ -18,20 +18,38 @@ export interface AppConfig {
   supportedLanguages: ReadonlyArray<{ code: string; label: string }>;
 }
 
-const STT_ENGINES: ReadonlySet<SttEngineId> = new Set(['mock', 'whisper-cloud', 'google'] as const);
-const TRANSLATION_ENGINES: ReadonlySet<TranslationEngineId> = new Set(['mock', 'deepl', 'openai', 'google'] as const);
-const TTS_ENGINES: ReadonlySet<TtsEngineId> = new Set(['mock', 'azure', 'google'] as const);
+const STT_ENGINES: ReadonlySet<SttEngineId> = new Set([
+  'mock',
+  'whisper-cloud',
+  'google',
+  'web-speech',
+  'expo-speech-recognition',
+] as const);
+const TRANSLATION_ENGINES: ReadonlySet<TranslationEngineId> = new Set([
+  'mock',
+  'deepl',
+  'openai',
+  'google',
+  'google-free',
+] as const);
+const TTS_ENGINES: ReadonlySet<TtsEngineId> = new Set([
+  'mock',
+  'azure',
+  'google',
+  'web-speech',
+  'expo-speech',
+] as const);
 
 function pickStt(raw: string | undefined): SttEngineId {
-  return raw && STT_ENGINES.has(raw as SttEngineId) ? (raw as SttEngineId) : 'mock';
+  return raw && STT_ENGINES.has(raw as SttEngineId) ? (raw as SttEngineId) : 'web-speech';
 }
 function pickTranslation(raw: string | undefined): TranslationEngineId {
   return raw && TRANSLATION_ENGINES.has(raw as TranslationEngineId)
     ? (raw as TranslationEngineId)
-    : 'mock';
+    : 'google-free';
 }
 function pickTts(raw: string | undefined): TtsEngineId {
-  return raw && TTS_ENGINES.has(raw as TtsEngineId) ? (raw as TtsEngineId) : 'mock';
+  return raw && TTS_ENGINES.has(raw as TtsEngineId) ? (raw as TtsEngineId) : 'web-speech';
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -56,5 +74,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     { code: 'ru', label: 'Russian' },
     { code: 'tr', label: 'Turkish' },
     { code: 'pl', label: 'Polish' },
+    { code: 'vi', label: 'Vietnamese' },
+    { code: 'th', label: 'Thai' },
+    { code: 'id', label: 'Indonesian' },
   ],
 };

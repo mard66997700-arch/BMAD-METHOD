@@ -207,4 +207,16 @@ describe('Story 1.5 — AudioPlaybackQueue', () => {
     for (let i = 0; i < 10; i++) await Promise.resolve();
     expect(queue.busy).toBe(false);
   });
+
+  test('forwards chunk.pan to the provider via PlaybackOptions', async () => {
+    const provider = new MockAudioPlaybackProvider();
+    const queue = new AudioPlaybackQueue(provider, { idleMs: 0 });
+
+    queue.enqueue({ ...buildChunk('a'), pan: 'right' });
+    queue.enqueue({ ...buildChunk('b'), pan: 'left' });
+    queue.enqueue(buildChunk('c'));
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    expect(provider.played.map((p) => p.pan)).toEqual(['right', 'left', undefined]);
+  });
 });

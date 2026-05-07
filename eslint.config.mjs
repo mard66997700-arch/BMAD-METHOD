@@ -44,6 +44,12 @@ export default [
       'projects/smart-translator-earphone/app/babel.config.js',
       'projects/smart-translator-earphone/app/metro.config.js',
       'projects/smart-translator-earphone/app/index.js',
+      // Jest module mocks are CommonJS by Jest convention.
+      'projects/smart-translator-earphone/app/__mocks__/**',
+      // Browser extension uses MV3 globals (chrome.*, speechSynthesis,
+      // etc.) that aren't part of Node ESLint's environment. The
+      // extension has no test runner at root level.
+      'projects/smart-translator-earphone/extension/**',
     ],
   },
 

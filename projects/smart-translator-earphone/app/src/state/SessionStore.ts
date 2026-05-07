@@ -14,10 +14,15 @@
  */
 
 import { DEFAULT_CONFIG } from '../config/default-config';
-import { createAudioCapture, createAudioPlayback } from '../core/audio/platform-audio-factory';
+import {
+  createAudioCapture,
+  createAudioPlayback,
+  createTabAudioCapture,
+} from '../core/audio/platform-audio-factory';
 import {
   createEngineRouter,
   type EngineFactoryOptions,
+  type RuntimeApiKeys,
 } from '../core/engine-factory';
 import type { EngineEvent, EngineRouter, SessionStatus } from '../core/engine-router';
 import type { SttEngineId } from '../core/stt/stt-types';
@@ -26,6 +31,22 @@ import type { TtsEngineId } from '../core/tts/tts-types';
 import { DEFAULT_VOICE_SETTINGS, type VoiceSettings } from '../core/tts/voice-settings';
 
 export type ConversationMode = 'conversation' | 'lecture';
+
+/**
+ * Source of audio fed into the pipeline.
+ *   - 'mic' (default): the user's microphone (default OS input device).
+ *   - 'tab': another tab/window's audio captured via getDisplayMedia. Web
+ *     only — on native it falls back to a Mock provider so feature
+ *     detection can prevent the option from showing in the UI.
+ */
+export type AudioInputSource = 'mic' | 'tab';
+
+/**
+ * Provider key slots. Runtime keys typed in the Settings screen are stored
+ * here and forwarded to the engine factory; they take precedence over the
+ * `EXPO_PUBLIC_*` env-vars baked in at build time.
+ */
+export type ApiKeyProvider = 'openai' | 'google' | 'deepl' | 'azure';
 
 export interface TranscriptEntry {
   id: string;
@@ -53,6 +74,13 @@ export interface PastSession {
 export interface SessionState {
   status: SessionStatus;
   mode: ConversationMode;
+  inputSource: AudioInputSource;
+  /**
+   * The selected microphone deviceId on web. Empty string means "use the
+   * OS default device". Ignored when inputSource is 'tab' or on native
+   * platforms.
+   */
+  micDeviceId: string;
   sourceLang: string | 'auto';
   targetLang: string;
   sttEngine: SttEngineId;
@@ -60,6 +88,17 @@ export interface SessionState {
   ttsEngine: TtsEngineId;
   voice: VoiceSettings;
   speakOutput: boolean;
+  /**
+   * Stereo dual-ear playback. When true, the captured source audio is
+   * monitored back to the left earphone and the synthesized translation
+   * plays in the right earphone (interpreter-style). Default false.
+   */
+  dualEarStereo: boolean;
+  /**
+   * Runtime API keys for cloud providers. Empty string / missing = not
+   * configured. Mutated via `setApiKey()`.
+   */
+  apiKeys: RuntimeApiKeys;
   entries: TranscriptEntry[];
   history: PastSession[];
   errorMessage: string | null;
@@ -85,6 +124,8 @@ export class SessionStore {
     this.state = {
       status: 'idle',
       mode: 'conversation',
+      inputSource: 'mic',
+      micDeviceId: '',
       sourceLang: 'auto',
       targetLang: DEFAULT_CONFIG.defaultTargetLang,
       sttEngine: DEFAULT_CONFIG.defaultSttEngine,
@@ -92,6 +133,8 @@ export class SessionStore {
       ttsEngine: DEFAULT_CONFIG.defaultTtsEngine,
       voice: DEFAULT_VOICE_SETTINGS,
       speakOutput: true,
+      dualEarStereo: false,
+      apiKeys: {},
       entries: [],
       history: [],
       errorMessage: null,
@@ -151,6 +194,65 @@ export class SessionStore {
     this.engine?.setSpeakOutput(speak);
   }
 
+  setDualEarStereo(enabled: boolean): void {
+    if (this.state.dualEarStereo === enabled) return;
+    this.update({ dualEarStereo: enabled });
+    this.engine?.setDualEarStereo(enabled);
+  }
+
+  /**
+   * Store an API key entered via the Settings screen. Passing an empty
+   * string clears the key. Drops the cached engine so the next
+   * `startSession()` rebuilds the provider chain with the new credentials.
+   */
+  setApiKey(provider: ApiKeyProvider, key: string): void {
+    const trimmed = key.trim();
+    const next: RuntimeApiKeys = { ...this.state.apiKeys };
+    if (trimmed.length === 0) delete next[provider];
+    else next[provider] = trimmed;
+    this.update({ apiKeys: next });
+    this.invalidateEngine();
+  }
+
+  /**
+   * Switch between microphone capture and tab/system-audio capture. The
+   * cached engine is dropped so the next `startSession()` rebuilds it with
+   * the new capture provider.
+   *
+   * Throws if a session is currently active — callers should `stopSession()`
+   * first.
+   */
+  setInputSource(source: AudioInputSource): void {
+    if (this.state.status === 'active' || this.state.status === 'starting') {
+      throw new Error('Stop the current session before changing the input source.');
+    }
+    if (this.state.inputSource === source) return;
+    this.update({ inputSource: source });
+    this.invalidateEngine();
+  }
+
+  /**
+   * Choose which microphone to capture from. Empty string selects the OS
+   * default. Takes effect on the next `startSession()`. Throws if a
+   * session is currently active.
+   */
+  setMicDeviceId(deviceId: string): void {
+    if (this.state.status === 'active' || this.state.status === 'starting') {
+      throw new Error('Stop the current session before changing the microphone.');
+    }
+    if (this.state.micDeviceId === deviceId) return;
+    this.update({ micDeviceId: deviceId });
+    this.invalidateEngine();
+  }
+
+  private invalidateEngine(): void {
+    this.engine = null;
+    if (this.engineUnsubscribe) {
+      this.engineUnsubscribe();
+      this.engineUnsubscribe = null;
+    }
+  }
+
   async startSession(): Promise<void> {
     if (this.state.status === 'active' || this.state.status === 'starting') return;
     sessionCounter += 1;
@@ -198,8 +300,14 @@ export class SessionStore {
   }
 
   private buildEngine(): EngineRouter {
+    const capture =
+      this.state.inputSource === 'tab'
+        ? createTabAudioCapture()
+        : createAudioCapture({
+            deviceId: this.state.micDeviceId || undefined,
+          });
     const opts: EngineFactoryOptions = {
-      capture: createAudioCapture(),
+      capture,
       playback: createAudioPlayback(),
       sourceLang: this.state.sourceLang,
       targetLang: this.state.targetLang,
@@ -208,6 +316,8 @@ export class SessionStore {
       sttEngine: this.state.sttEngine,
       translationEngine: this.state.translationEngine,
       ttsEngine: this.state.ttsEngine,
+      apiKeys: this.state.apiKeys,
+      dualEarStereo: this.state.dualEarStereo,
     };
     return createEngineRouter(opts);
   }

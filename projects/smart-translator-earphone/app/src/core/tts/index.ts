@@ -7,4 +7,10 @@ export * from './voice-settings';
 export { MockTtsProvider } from './mock-tts-provider';
 export { AzureTtsProvider, type AzureTtsOptions } from './azure-tts-provider';
 export { GoogleTtsProvider, type GoogleTtsOptions } from './google-tts-provider';
+export {
+  WebSpeechTtsProvider,
+  type WebSpeechTtsOptions,
+  type UtteranceCtor,
+} from './web-speech-tts-provider';
+export { ExpoSpeechTtsProvider } from './expo-speech-tts-provider';
 export { TtsEngineRouter, type TtsEngineRouterOptions } from './tts-engine-router';

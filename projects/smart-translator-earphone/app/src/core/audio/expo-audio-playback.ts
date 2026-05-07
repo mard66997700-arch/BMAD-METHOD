@@ -15,21 +15,37 @@
 
 import { Platform } from 'react-native';
 
-import type { AudioPlaybackProvider } from './audio-playback';
+import type { AudioPlaybackProvider, PlaybackOptions, PlaybackPan } from './audio-playback';
 import { encodeWavInt16 } from '../stt/audio-encoding';
 
 const FADE_MS = 60;
 
 export class ExpoAudioPlaybackProvider implements AudioPlaybackProvider {
-  async playSamples(samples: Int16Array, sampleRateHz: number, signal: AbortSignal): Promise<void> {
+  async playSamples(
+    samples: Int16Array,
+    sampleRateHz: number,
+    signal: AbortSignal,
+    options?: PlaybackOptions,
+  ): Promise<void> {
     if (Platform.OS === 'web') {
-      return playViaWebAudio(samples, sampleRateHz, signal);
+      return playViaWebAudio(samples, sampleRateHz, signal, options?.pan ?? 'center');
     }
     return playViaExpoAv(samples, sampleRateHz, signal);
   }
 }
 
-async function playViaWebAudio(samples: Int16Array, sampleRateHz: number, signal: AbortSignal): Promise<void> {
+function panToValue(pan: PlaybackPan): number {
+  if (pan === 'left') return -1;
+  if (pan === 'right') return 1;
+  return 0;
+}
+
+async function playViaWebAudio(
+  samples: Int16Array,
+  sampleRateHz: number,
+  signal: AbortSignal,
+  pan: PlaybackPan,
+): Promise<void> {
   const g = globalThis as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
   const Ctx = g.AudioContext ?? g.webkitAudioContext;
   if (!Ctx) return;
@@ -43,7 +59,19 @@ async function playViaWebAudio(samples: Int16Array, sampleRateHz: number, signal
   const gain = ctx.createGain();
   source.buffer = buffer;
   source.connect(gain);
-  gain.connect(ctx.destination);
+  // StereoPannerNode is not always present (Safari < 14.1); fall back to
+  // direct connection when missing.
+  const panner =
+    typeof ctx.createStereoPanner === 'function' && pan !== 'center'
+      ? ctx.createStereoPanner()
+      : null;
+  if (panner) {
+    panner.pan.value = panToValue(pan);
+    gain.connect(panner);
+    panner.connect(ctx.destination);
+  } else {
+    gain.connect(ctx.destination);
+  }
   gain.gain.value = 1;
   return new Promise((resolve) => {
     let resolved = false;

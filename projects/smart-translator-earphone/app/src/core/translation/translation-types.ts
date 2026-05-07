@@ -8,7 +8,7 @@
  * partials.
  */
 
-export type TranslationEngineId = 'mock' | 'deepl' | 'openai' | 'google';
+export type TranslationEngineId = 'mock' | 'deepl' | 'openai' | 'google' | 'google-free';
 
 export interface TranslationRequest {
   text: string;

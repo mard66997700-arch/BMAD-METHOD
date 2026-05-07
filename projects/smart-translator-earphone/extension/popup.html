@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Translator Earphone</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Smart Translator</h1>
+      <p class="subtitle">Capture this tab's audio, translate it live.</p>
+
+      <label>
+        STT provider
+        <select id="stt-provider">
+          <option value="whisper">OpenAI Whisper (~$0.006/min)</option>
+          <option value="google">Google Cloud STT (free 60 min/month)</option>
+        </select>
+      </label>
+
+      <label>
+        API key
+        <input
+          id="api-key"
+          type="password"
+          placeholder="sk-… or AIza…"
+          autocomplete="off"
+        />
+      </label>
+
+      <label>
+        Source language
+        <select id="source-lang">
+          <option value="auto">Auto-detect</option>
+          <option value="en">English</option>
+          <option value="ja">Japanese</option>
+          <option value="ko">Korean</option>
+          <option value="zh">Chinese (Mandarin)</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+          <option value="ru">Russian</option>
+        </select>
+      </label>
+
+      <label>
+        Target language
+        <select id="target-lang">
+          <option value="vi">Vietnamese</option>
+          <option value="en">English</option>
+          <option value="th">Thai</option>
+          <option value="id">Indonesian</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+          <option value="ja">Japanese</option>
+        </select>
+      </label>
+
+      <label class="row">
+        <input id="dual-ear" type="checkbox" checked />
+        <span>Stereo dual-ear (original L / translation R)</span>
+      </label>
+
+      <label class="row">
+        <input id="tts" type="checkbox" checked />
+        <span>Speak translation through Web Speech TTS</span>
+      </label>
+
+      <button id="toggle">Start</button>
+      <p class="status" id="status">Idle.</p>
+      <section id="transcript">
+        <h2>Original</h2>
+        <p id="original"></p>
+        <h2>Translation</h2>
+        <p id="translation"></p>
+      </section>
+      <p class="footnote">
+        Free Google Translate. Tab audio capture requires Whisper or Google
+        Cloud STT credentials. Keys are stored only in
+        <code>chrome.storage.session</code> (cleared when Chrome closes).
+      </p>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
