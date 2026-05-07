@@ -40,16 +40,11 @@ function isYouTubeWatch(url) {
   }
 }
 
-async function resolveProvider(provider, tab, config) {
+async function resolveProvider(provider, tab, _config) {
   if (provider !== 'auto') return provider;
   if (isYouTubeWatch(tab?.url)) return 'youtube-captions';
-  // Off-YouTube fallback. Prefer the local Whisper-WASM engine when it
-  // is available; otherwise honour an API key the user has already set
-  // so `auto` still works for paid-engine users while Whisper-WASM
-  // ships.
-  const key = (config?.apiKey ?? '').trim();
-  if (key.startsWith('sk-')) return 'whisper';
-  if (key.startsWith('AIza')) return 'google';
+  // Off-YouTube fallback: zero-key local Whisper. Users who set an
+  // explicit API key can still pick the paid engine from the dropdown.
   return 'whisper-wasm';
 }
 

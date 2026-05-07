@@ -115,12 +115,52 @@ async function stop() {
   report({ kind: 'status', state: 'stopped' });
 }
 
+// Whisper-WASM is heavyweight (~2 MB bundle + 40 MB model on first
+// run), so we only dynamic-import the bundle when the user actually
+// asks for it.
+let whisperWasmModulePromise = null;
+let whisperWasmReady = false;
+
+async function loadWhisperWasm() {
+  if (!whisperWasmModulePromise) {
+    whisperWasmModulePromise = import('./dist/whisper-wasm.bundle.js').catch((err) => {
+      whisperWasmModulePromise = null;
+      throw new Error(
+        `Whisper-WASM bundle missing — run \`npm run build\` in the extension/ directory and reload (${err?.message ?? err})`,
+      );
+    });
+  }
+  return whisperWasmModulePromise;
+}
+
 async function runStt(pcm, config, signal) {
   if (config.resolvedProvider === 'whisper-wasm') {
-    // Whisper-WASM provider lives in lib/whisper-wasm.js (added in a
-    // follow-up commit). Until that ships, fall back to the paid
-    // engines if a key is present, otherwise raise.
-    throw new Error('Whisper-WASM provider not yet bundled — run `npm run build` and reload the extension');
+    const mod = await loadWhisperWasm();
+    if (!whisperWasmReady) {
+      report({
+        kind: 'status',
+        state: 'loading-model',
+        engine: 'whisper-wasm',
+      });
+      try {
+        await mod.loadModel();
+        whisperWasmReady = true;
+        report({
+          kind: 'status',
+          state: 'listening',
+          engine: 'whisper-wasm',
+        });
+      } catch (err) {
+        whisperWasmModulePromise = null;
+        throw err;
+      }
+    }
+    return mod.transcribe({
+      pcm,
+      sampleRateHz: SAMPLE_RATE_HZ,
+      sourceLang: config.sourceLang,
+      signal,
+    });
   }
   if (config.resolvedProvider === 'whisper' || config.sttProvider === 'whisper') {
     return transcribeWithWhisper({

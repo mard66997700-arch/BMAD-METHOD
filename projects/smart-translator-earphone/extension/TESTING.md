@@ -15,6 +15,9 @@ The automated unit / integration tests live next to the code:
 - `__tests__/youtube-captions.test.js` — `ytInitialPlayerResponse`
   parsing, caption-track selection (manual vs auto-generated), `json3`
   event parsing, and `findEventAt` segment lookup.
+- `__tests__/whisper-wasm.test.js` — local Whisper wrapper: PCM →
+  Float32 conversion, language code mapping, lazy model load with
+  factory injection, AbortSignal handling, and result-text trimming.
 - `../app/src/core/engine-router.test.ts` — dual-ear stereo, multi-utterance
   panning, and language-switching mid-session for the Expo app pipeline.
 
@@ -40,23 +43,38 @@ translation to the right ear.
     zero-key, zero-download. Only works on `youtube.com/watch` videos
     that already publish a caption track (manual or auto-generated).
   - **Whisper-WASM** (default fallback in `Auto` mode for non-YouTube
-    tabs) — zero-key, runs locally; downloads ~40–80 MB the first time
-    a tab uses it. _Available once `npm run build` ships in a follow-up
-    commit._
+    tabs) — zero-key, runs locally; downloads `Xenova/whisper-tiny`
+    (~40 MB quantised) from HuggingFace the first time a tab uses it,
+    then caches it in the browser. Run `npm run build` once to produce
+    the `dist/whisper-wasm.bundle.js` esbuild output before loading
+    the extension.
   - **OpenAI Whisper API** — paid, `$0.006/min`
     ([keys](https://platform.openai.com/api-keys)).
   - **Google Cloud Speech-to-Text** — paid, free tier ~60 min/month
     ([credentials](https://console.cloud.google.com/apis/credentials)).
 - Free Google Translate is built in; no translation key required.
 
-## Load the extension
+## Build and load the extension
 
-1. Open `chrome://extensions`.
-2. Enable **Developer mode** (top-right toggle).
-3. Click **Load unpacked** and select
+1. From the repo root:
+
+   ```bash
+   cd projects/smart-translator-earphone/extension
+   npm install
+   npm run build   # produces dist/whisper-wasm.bundle.js (~2 MB)
+   ```
+
+   The build step is only required for the Whisper-WASM provider; the
+   YouTube captions / Whisper API / Google STT paths work without it.
+   `dist/` is gitignored — re-run `npm run build` after pulling
+   updates if you want Whisper-WASM available.
+
+2. Open `chrome://extensions`.
+3. Enable **Developer mode** (top-right toggle).
+4. Click **Load unpacked** and select
    `projects/smart-translator-earphone/extension/`.
-4. Pin the **Smart Translator Earphone** action so the popup is one click
-   away.
+5. Pin the **Smart Translator Earphone** action so the popup is one
+   click away.
 
 ## Run the dual-ear translation (zero-key, YouTube)
 
@@ -80,17 +98,38 @@ and the **Translation** field follows. There is no STT round-trip
 latency on this path, so the only delay is the Web Speech TTS speaking
 out the translation.
 
-## Run the dual-ear translation (paid STT, e.g. Spotify / Twitch / podcast)
+## Run the dual-ear translation (zero-key, non-YouTube via Whisper-WASM)
 
-For tabs that don't expose captions, fall back to a paid STT engine
-(Whisper-WASM will replace this requirement in a follow-up commit).
+For tabs that don't expose captions (Spotify, Twitch, podcast players,
+in-app meetings, …) use the local Whisper-WASM engine — still no API
+key, but it transcribes the captured tab audio.
 
-1. Open the audio source.
-2. Click the extension icon → **STT provider** → `OpenAI Whisper API` or
-   `Google Cloud STT`.
-3. Paste your STT **API key**.
+1. Make sure `npm run build` was run at least once (see **Build and
+   load the extension**).
+2. Open the audio source.
+3. Click the extension icon → **STT provider** → `Whisper-WASM in
+browser` (or leave it on `Auto`, which picks Whisper-WASM
+   automatically off-YouTube).
 4. Configure source / target language and the dual-ear / TTS checkboxes
    as in the YouTube flow above.
+5. Click **Start**, accept the tab-capture permission.
+
+The status field reads `Loading Whisper-WASM (local) model (~40 MB on
+first run)…` while `Xenova/whisper-tiny` downloads, then switches to
+`Listening (Whisper-WASM (local))…`. Subsequent sessions reuse the
+cached model and start in seconds.
+
+## Run the dual-ear translation (paid STT)
+
+If you want higher accuracy than Whisper-tiny, the paid engines remain
+available.
+
+1. Open the audio source.
+2. Click the extension icon → **STT provider** → `OpenAI Whisper API`
+   or `Google Cloud STT`.
+3. Paste your STT **API key**.
+4. Configure source / target language and the dual-ear / TTS
+   checkboxes as in the YouTube flow above.
 5. Click **Start**, accept the tab-capture permission.
 
 Status changes to `Listening (OpenAI Whisper API)…` (or Google). The
@@ -99,15 +138,15 @@ transcribing.
 
 ## Expected behaviour
 
-| Where to look                             | What you should see / hear                                                       |
-| ----------------------------------------- | -------------------------------------------------------------------------------- |
-| Left ear                                  | Original audio from the YouTube video.                                           |
-| Right ear                                 | Web Speech TTS reading out the translation (~4–5 s after the matching original). |
-| Popup → **Original** field                | Live transcript of the source language as STT returns it.                        |
-| Popup → **Translation** field             | Translated text matching the original utterance.                                 |
-| Popup → status                            | `Listening to tab…` while running.                                               |
-| `chrome://extensions` → service worker    | No errors after `Start`.                                                         |
-| Offscreen document DevTools (Inspect)     | `[partial]` and `[translation]` log lines on each chunk.                         |
+| Where to look                          | What you should see / hear                                                       |
+| -------------------------------------- | -------------------------------------------------------------------------------- |
+| Left ear                               | Original audio from the YouTube video.                                           |
+| Right ear                              | Web Speech TTS reading out the translation (~4–5 s after the matching original). |
+| Popup → **Original** field             | Live transcript of the source language as STT returns it.                        |
+| Popup → **Translation** field          | Translated text matching the original utterance.                                 |
+| Popup → status                         | `Listening to tab…` while running.                                               |
+| `chrome://extensions` → service worker | No errors after `Start`.                                                         |
+| Offscreen document DevTools (Inspect)  | `[partial]` and `[translation]` log lines on each chunk.                         |
 
 End-to-end latency is dominated by the 4-second chunk size + STT
 round-trip. Anything in the 3–6 s range is normal.
@@ -134,30 +173,36 @@ After making any change to the extension:
    key, **Start** again — the Original field now updates every ~4 s
    instead of every ~250 ms.
 7. **Auto-mode routing:** with `Auto`, **Start** on a non-YouTube tab —
-   the popup status reads `… (Whisper-WASM (local))…` once the
-   Whisper-WASM provider lands. Switch back to a YouTube tab and the
-   same `Auto` mode picks `YouTube captions (zero-key)` instead.
+   the popup status reads `… (Whisper-WASM (local))…`. Switch back to
+   a YouTube tab and the same `Auto` mode picks
+   `YouTube captions (zero-key)` instead.
 8. **Caption-less video:** open a YouTube video that has no captions
    (live stream without auto-captions, brand-new upload), pick
    `YouTube captions`, **Start** — the popup surfaces
-   `Error: No caption tracks for this video` and offers no transcripts.
-   Switch to a paid engine (or Whisper-WASM once available) to keep
-   working.
+   `Error: No caption tracks for this video`. Switch to Whisper-WASM
+   (zero-key) to keep working.
+9. **Cold model load:** uninstall + reinstall the extension, pick
+   Whisper-WASM, click **Start** on a non-YouTube tab — the popup
+   shows `Loading … model (~40 MB on first run)` and only the first
+   chunk has the model-download latency. Subsequent chunks (~4 s
+   each) finish in <1 s on a modern laptop with WebGPU enabled.
 
 ## Troubleshooting
 
-| Symptom                                    | Likely cause                                                                              |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| Silence in both ears after `Start`         | Tab-capture permission was denied. Click the extension's **site access** toggle in `chrome://extensions` and try again. |
-| `Start failed: Could not get media stream` | The tab is muted by Chrome, or another extension already holds the capture. Refresh the tab. |
-| `Whisper STT failed: HTTP 401`             | Wrong / expired API key. Re-paste the key (it lives in `chrome.storage.session` only).    |
-| `Google STT failed: HTTP 403`              | The Speech-to-Text API isn't enabled on the project the key belongs to.                   |
-| `No caption tracks for this video`         | The YouTube video does not expose captions (no manual subtitles, auto-captions disabled). Pick a paid engine (or Whisper-WASM once available) instead. |
-| `YouTube captions mode requires a youtube.com/watch tab` | The active tab is on YouTube but not on a `/watch?v=…` URL (e.g. `/feed/trending`). Open an actual video first. |
-| `Could not parse ytInitialPlayerResponse`  | YouTube changed its watch-page HTML shape. File an issue; the captions provider needs a regex update. |
-| Translation lag > 10 s                     | Slow network or rate-limited Google Translate endpoint. Try again in a minute.            |
-| Translation plays in **both** ears equally | Web Speech TTS does not honour stereo panning. The original audio still pans left, so the right ear remains translation-dominant — this is expected. |
-| Popup shows nothing in transcript          | Open the offscreen document via `chrome://extensions` → **service worker** → **Inspect views: offscreen.html** and check the console for STT errors. |
+| Symptom                                                  | Likely cause                                                                                                                                                                  |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Silence in both ears after `Start`                       | Tab-capture permission was denied. Click the extension's **site access** toggle in `chrome://extensions` and try again.                                                       |
+| `Start failed: Could not get media stream`               | The tab is muted by Chrome, or another extension already holds the capture. Refresh the tab.                                                                                  |
+| `Whisper STT failed: HTTP 401`                           | Wrong / expired API key. Re-paste the key (it lives in `chrome.storage.session` only).                                                                                        |
+| `Google STT failed: HTTP 403`                            | The Speech-to-Text API isn't enabled on the project the key belongs to.                                                                                                       |
+| `No caption tracks for this video`                       | The YouTube video does not expose captions (no manual subtitles, auto-captions disabled). Switch the provider dropdown to `Whisper-WASM` (zero-key) or a paid engine instead. |
+| `YouTube captions mode requires a youtube.com/watch tab` | The active tab is on YouTube but not on a `/watch?v=…` URL (e.g. `/feed/trending`). Open an actual video first.                                                               |
+| `Could not parse ytInitialPlayerResponse`                | YouTube changed its watch-page HTML shape. File an issue; the captions provider needs a regex update.                                                                         |
+| `Whisper-WASM bundle missing`                            | You haven't run `npm run build` since cloning, or `dist/` got wiped. Re-run the build and reload the extension.                                                               |
+| Whisper-WASM stuck on `Loading … model`                  | First-run model download is ~40 MB; check the offscreen DevTools console for HF CDN errors and retry on a faster connection.                                                  |
+| Translation lag > 10 s                                   | Slow network or rate-limited Google Translate endpoint. Try again in a minute.                                                                                                |
+| Translation plays in **both** ears equally               | Web Speech TTS does not honour stereo panning. The original audio still pans left, so the right ear remains translation-dominant — this is expected.                          |
+| Popup shows nothing in transcript                        | Open the offscreen document via `chrome://extensions` → **service worker** → **Inspect views: offscreen.html** and check the console for STT errors.                          |
 
 ## Cleanup
 

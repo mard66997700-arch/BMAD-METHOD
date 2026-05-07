@@ -129,8 +129,9 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg.kind === 'status') {
     if (msg.state === 'listening') {
       setStatus(`Listening (${describeEngine(msg.engine)})…`);
-    }
-    if (msg.state === 'stopped') {
+    } else if (msg.state === 'loading-model') {
+      setStatus(`Loading ${describeEngine(msg.engine)} model (~40 MB on first run)…`);
+    } else if (msg.state === 'stopped') {
       setStatus('Stopped.');
       setRunning(false);
     }
