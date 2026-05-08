@@ -9,11 +9,15 @@ mic-driven scenarios.
 ## What you need
 
 - Chrome / Edge / Brave 116+ (Manifest V3 with `chrome.offscreen`).
-- An STT API key. Either:
-  - **Google Cloud Speech-to-Text** — free tier 60 min/month
+- An STT API key. Pick one based on the latency you can tolerate:
+  - **Soniox** — streaming WebSocket, ~1 s latency. Free trial
+    ~200 minutes; afterwards ~$0.12/h
+    ([console](https://console.soniox.com)). Recommended for live
+    conversations or watching YouTube without a noticeable lag.
+  - **Google Cloud Speech-to-Text** — batch REST, ~5 s latency.
+    Free tier 60 min/month
     ([console](https://console.cloud.google.com/apis/credentials)).
-    Recommended for the keyless-by-default vibe.
-  - **OpenAI Whisper** — `$0.006/minute`
+  - **OpenAI Whisper** — batch REST, ~5 s latency. `$0.006/minute`
     ([keys](https://platform.openai.com/api-keys)).
 - The free Google Translate endpoint
   (`translate.googleapis.com/translate_a/single`) is built in; no
@@ -37,9 +41,11 @@ and the synthesised translation plays in your right.
 - `background.js` — service worker. Owns the offscreen lifecycle and
   ferries `chrome.tabCapture.getMediaStreamId()` results.
 - `offscreen.html` / `offscreen.js` — owns the `MediaStream` /
-  `AudioContext`, batches PCM into 4-second chunks, runs the chunks
-  through the chosen STT provider, then `translateFree()`, then Web
-  Speech TTS.
+  `AudioContext`. With a streaming STT (Soniox) it forwards PCM
+  frames as they arrive and translates only on finalised tokens.
+  With a batch STT (Whisper / Google Cloud REST) it accumulates
+  4-second WAV chunks instead. In either case the result flows
+  through `translateFree()` and Web Speech TTS.
 - `popup.html` / `popup.js` — the configuration UI and a live
   transcript view. Settings persist in `chrome.storage.local`; the API
   key is stored only in `chrome.storage.session` so closing Chrome
@@ -48,6 +54,8 @@ and the synthesised translation plays in your right.
   16 kHz mono PCM tap.
 - `lib/translate.js` — same `google-free` endpoint as the Expo app.
 - `lib/stt.js` — Whisper and Google Cloud Speech REST adapters.
+- `lib/soniox-streaming.js` — Soniox WebSocket client (push PCM,
+  receive partial / final tokens).
 
 ## Limits
 
@@ -57,10 +65,10 @@ and the synthesised translation plays in your right.
   only accepts microphone input; there's no free, in-browser STT
   capable of transcribing arbitrary audio. The extension makes that
   caveat explicit by requiring a key on the popup.
-- **No streaming STT.** We post 4-second WAV chunks, so latency is
-  ~chunk length plus the round-trip. For YouTube / Netflix watching
-  that's acceptable; for live conversations the Expo app's Web Speech
-  / native paths are lower-latency.
+- **Streaming STT requires Soniox.** The other two providers are HTTP
+  REST endpoints with no streaming variant browsers can talk to. If
+  ~5 s of latency is fine, Google Cloud's free tier is the cheapest
+  option; if you want ≈1 s latency you need a Soniox key.
 - **Web Speech TTS plays from both ears.** If you wear earphones, the
   panning still helps because the original is attenuated to your left
   ear, leaving the right ear dominated by the synthesised voice.

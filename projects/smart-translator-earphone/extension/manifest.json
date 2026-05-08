@@ -1,10 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Smart Translator Earphone (companion)",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Capture audio from a Chrome tab (YouTube, Netflix, meetings, …), transcribe it, translate it, and speak the translation in your ear. Free Google Translate is built in; STT requires an OpenAI / Google Cloud key (free tier available).",
   "permissions": ["tabCapture", "offscreen", "storage", "activeTab"],
-  "host_permissions": ["https://api.openai.com/*", "https://speech.googleapis.com/*", "https://translate.googleapis.com/*"],
+  "host_permissions": [
+    "https://api.openai.com/*",
+    "https://speech.googleapis.com/*",
+    "https://translate.googleapis.com/*",
+    "wss://stt-rt.soniox.com/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
