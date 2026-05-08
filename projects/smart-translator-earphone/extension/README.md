@@ -64,3 +64,16 @@ and the synthesised translation plays in your right.
 - **Web Speech TTS plays from both ears.** If you wear earphones, the
   panning still helps because the original is attenuated to your left
   ear, leaving the right ear dominated by the synthesised voice.
+
+## Publishing to the Chrome Web Store
+
+`store/` contains everything you need to push the extension to the
+Chrome Web Store:
+
+- `store/LISTING.md` — copy / paste fields for the dev console.
+- `store/PRIVACY.md` — privacy policy required by the dashboard.
+- `store/PUBLISH_CHECKLIST.md` — step-by-step submission checklist.
+- `store/build-zip.sh` — packages the extension into
+  `store/dist/smart-translator-earphone-v<version>.zip`.
+- `store/generate-placeholders.sh` — regenerates the placeholder
+  screenshots in `store/assets/` (replace before public release).

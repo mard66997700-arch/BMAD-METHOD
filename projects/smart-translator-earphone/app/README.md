@@ -53,6 +53,10 @@ npx eas build -p ios
 npx eas build -p android
 ```
 
+For a step-by-step on-device test of the Free preset with native STT
++ TTS (and the stereo dual-ear toggle on real earphones), see
+[`docs/TESTING_MOBILE.md`](docs/TESTING_MOBILE.md).
+
 ## Configure API keys
 
 Copy `.env.example` to `.env` and fill in the keys you have. Only
