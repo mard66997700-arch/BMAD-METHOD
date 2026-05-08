@@ -5,21 +5,33 @@
  *
  * Manifest V3 service workers can't hold a `MediaStream`, hence the
  * offscreen document.
+ *
+ * Two STT execution modes:
+ *   - "batch"     (Whisper, Google Cloud REST): accumulate ~4 s of PCM,
+ *                 ship as a WAV, await the full transcript, translate.
+ *                 Latency ≈ chunk + round-trip (typically ~5 s).
+ *   - "streaming" (Soniox WebSocket): push PCM frames as they arrive,
+ *                 surface partials immediately, run translation only on
+ *                 finalized tokens. Latency ≈ ~500 ms – 1 s.
  */
 
 import { TabAudioCapture } from './lib/audio-capture.js';
+import { SonioxStreaming } from './lib/soniox-streaming.js';
 import { transcribeWithGoogle, transcribeWithWhisper } from './lib/stt.js';
 import { translateFree } from './lib/translate.js';
 
 const SAMPLE_RATE = 16_000;
 const CHUNK_SECONDS = 4;
 const CHUNK_SAMPLES = SAMPLE_RATE * CHUNK_SECONDS;
+const STREAMING_PROVIDERS = new Set(['soniox']);
 
 let capture = null;
 let buffer = new Int16Array(0);
 let busy = false;
 let cancelToken = null;
 let activeConfig = null;
+/** @type {SonioxStreaming | null} */
+let streaming = null;
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.target !== 'offscreen') return false;
@@ -45,6 +57,17 @@ async function start(streamId, config) {
   await stop();
   activeConfig = config;
   cancelToken = new AbortController();
+  if (STREAMING_PROVIDERS.has(config.sttProvider)) {
+    streaming = new SonioxStreaming({
+      apiKey: config.apiKey,
+      sourceLang: config.sourceLang,
+      sampleRateHz: SAMPLE_RATE,
+      onPartial: (text) => report({ kind: 'partial', text }),
+      onFinal: (text, detectedLang) => onStreamingFinal(text, detectedLang),
+      onError: (err) => report({ kind: 'error', message: err?.message ?? String(err) }),
+    });
+    await streaming.start();
+  }
   capture = new TabAudioCapture();
   buffer = new Int16Array(0);
   await capture.connect(streamId, {
@@ -59,6 +82,14 @@ async function stop() {
   cancelToken = null;
   capture?.stop();
   capture = null;
+  if (streaming) {
+    try {
+      await streaming.stop();
+    } catch {
+      /* ignore */
+    }
+    streaming = null;
+  }
   buffer = new Int16Array(0);
   busy = false;
   activeConfig = null;
@@ -71,6 +102,10 @@ async function stop() {
 }
 
 function onPcm(chunk) {
+  if (streaming) {
+    streaming.pushPcm(chunk);
+    return;
+  }
   const merged = new Int16Array(buffer.length + chunk.length);
   merged.set(buffer);
   merged.set(chunk, buffer.length);
@@ -114,6 +149,30 @@ async function translateSegment(pcm) {
       buffer = buffer.subarray(CHUNK_SAMPLES);
       void translateSegment(new Int16Array(next));
     }
+  }
+}
+
+async function onStreamingFinal(text, detectedLang) {
+  if (!activeConfig) return;
+  try {
+    const tr = await translateFree({
+      text,
+      sourceLang: detectedLang ?? activeConfig.sourceLang,
+      targetLang: activeConfig.targetLang,
+      signal: cancelToken?.signal,
+    });
+    report({
+      kind: 'translation',
+      original: text,
+      translated: tr.text,
+      detectedLang: tr.detectedLang ?? detectedLang,
+    });
+    if (activeConfig.tts !== false && tr.text) {
+      speakRight(tr.text, activeConfig.targetLang);
+    }
+  } catch (err) {
+    if (err?.name === 'AbortError') return;
+    report({ kind: 'error', message: err?.message ?? String(err) });
   }
 }
 
