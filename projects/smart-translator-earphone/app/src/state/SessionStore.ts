@@ -26,6 +26,7 @@ import {
 } from '../core/engine-factory';
 import type { EngineEvent, EngineRouter, SessionStatus } from '../core/engine-router';
 import type { SttEngineId } from '../core/stt/stt-types';
+import type { GlossaryEntry } from '../core/translation/glossary';
 import type { TranslationEngineId } from '../core/translation/translation-types';
 import type { TtsEngineId } from '../core/tts/tts-types';
 import { DEFAULT_VOICE_SETTINGS, type VoiceSettings } from '../core/tts/voice-settings';
@@ -99,6 +100,11 @@ export interface SessionState {
    * configured. Mutated via `setApiKey()`.
    */
   apiKeys: RuntimeApiKeys;
+  /**
+   * User-defined translation glossary (custom term pairs). Applied
+   * around every translation call by the TranslationRouter.
+   */
+  glossary: GlossaryEntry[];
   entries: TranscriptEntry[];
   history: PastSession[];
   errorMessage: string | null;
@@ -135,6 +141,7 @@ export class SessionStore {
       speakOutput: true,
       dualEarStereo: false,
       apiKeys: {},
+      glossary: [],
       entries: [],
       history: [],
       errorMessage: null,
@@ -198,6 +205,34 @@ export class SessionStore {
     if (this.state.dualEarStereo === enabled) return;
     this.update({ dualEarStereo: enabled });
     this.engine?.setDualEarStereo(enabled);
+  }
+
+  /**
+   * Replace the active glossary with a fresh array of entries. Drops
+   * the engine's translation cache so subsequent translations pick up
+   * the new mappings immediately.
+   */
+  setGlossary(entries: GlossaryEntry[]): void {
+    this.update({ glossary: entries.slice() });
+    this.engine?.translation.setGlossary(entries);
+  }
+
+  addGlossaryEntry(entry: GlossaryEntry): void {
+    this.setGlossary([...this.state.glossary, entry]);
+  }
+
+  removeGlossaryEntry(index: number): void {
+    if (index < 0 || index >= this.state.glossary.length) return;
+    const next = this.state.glossary.slice();
+    next.splice(index, 1);
+    this.setGlossary(next);
+  }
+
+  updateGlossaryEntry(index: number, patch: Partial<GlossaryEntry>): void {
+    if (index < 0 || index >= this.state.glossary.length) return;
+    const next = this.state.glossary.slice();
+    next[index] = { ...next[index]!, ...patch };
+    this.setGlossary(next);
   }
 
   /**
@@ -318,6 +353,7 @@ export class SessionStore {
       ttsEngine: this.state.ttsEngine,
       apiKeys: this.state.apiKeys,
       dualEarStereo: this.state.dualEarStereo,
+      glossary: this.state.glossary,
     };
     return createEngineRouter(opts);
   }
