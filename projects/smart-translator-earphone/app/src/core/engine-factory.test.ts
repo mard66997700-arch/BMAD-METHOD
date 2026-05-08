@@ -82,6 +82,17 @@ describe('createEngineRouter — translation provider chain', () => {
     expect(result.text).toBe('Bonjour');
   });
 
+  test('forwards a glossary into the TranslationRouter', async () => {
+    const router = createEngineRouter({
+      capture: new MockAudioCaptureProvider(),
+      playback: new MockAudioPlaybackProvider(),
+      glossary: [{ source: 'Apple', target: 'Quả táo' }],
+    });
+    expect(router.translation.getGlossary()).toEqual([
+      { source: 'Apple', target: 'Quả táo' },
+    ]);
+  });
+
   test('falls all the way back to MockTranslationProvider when the free endpoint fails', async () => {
     (globalThis as unknown as { fetch: typeof fetch }).fetch = (jest.fn(async () => ({
       ok: false,

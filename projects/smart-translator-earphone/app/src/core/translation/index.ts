@@ -12,3 +12,10 @@ export {
   type GoogleTranslateFreeOptions,
 } from './google-translate-free-provider';
 export { TranslationRouter, type TranslationRouterOptions } from './translation-router';
+export {
+  applyGlossary,
+  entriesForDirection,
+  restoreGlossary,
+  type AppliedGlossary,
+  type GlossaryEntry,
+} from './glossary';

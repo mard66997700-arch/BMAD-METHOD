@@ -69,4 +69,62 @@ describe('TranslationRouter', () => {
     expect(partials.length).toBeGreaterThan(1);
     expect(partials[partials.length - 1]).toContain('Merci');
   });
+
+  describe('glossary', () => {
+    class EchoProvider implements TranslationProvider {
+      readonly id = 'openai' as const;
+      lastRequest: TranslationRequest | null = null;
+      isAvailable(): boolean {
+        return true;
+      }
+      async translate(req: TranslationRequest): Promise<TranslationResult> {
+        this.lastRequest = req;
+        return {
+          text: req.text,
+          sourceLang: req.sourceLang === 'auto' ? 'auto' : req.sourceLang,
+          targetLang: req.targetLang,
+          engine: 'openai',
+        };
+      }
+    }
+
+    test('rewrites source text and restores target term', async () => {
+      const echo = new EchoProvider();
+      const router = new TranslationRouter({
+        providers: [echo],
+        glossary: [{ source: 'Original sin', target: 'Tội nguyên tổ' }],
+      });
+      const result = await router.translate({
+        text: 'We discussed Original sin today.',
+        sourceLang: 'en',
+        targetLang: 'vi',
+      });
+      // Provider sees the placeholder, not the source phrase.
+      expect(echo.lastRequest?.text).not.toContain('Original sin');
+      expect(echo.lastRequest?.text).toMatch(/__G\d+__/);
+      // Caller sees the user's target term.
+      expect(result.text).toBe('We discussed Tội nguyên tổ today.');
+    });
+
+    test('setGlossary replaces entries and clears cache', async () => {
+      const echo = new EchoProvider();
+      const router = new TranslationRouter({
+        providers: [echo],
+        glossary: [{ source: 'Apple', target: 'Quả táo' }],
+      });
+      await router.translate({ text: 'Apple pie', sourceLang: 'en', targetLang: 'vi' });
+      expect(echo.lastRequest?.text).toMatch(/__G\d+__/);
+      router.setGlossary([{ source: 'Apple', target: 'Apple Inc' }]);
+      const result = await router.translate({ text: 'Apple pie', sourceLang: 'en', targetLang: 'vi' });
+      expect(result.text).toBe('Apple Inc pie');
+      expect(result.cached).toBeUndefined();
+    });
+
+    test('does not rewrite when glossary is empty', async () => {
+      const echo = new EchoProvider();
+      const router = new TranslationRouter({ providers: [echo] });
+      await router.translate({ text: 'plain text', sourceLang: 'en', targetLang: 'fr' });
+      expect(echo.lastRequest?.text).toBe('plain text');
+    });
+  });
 });

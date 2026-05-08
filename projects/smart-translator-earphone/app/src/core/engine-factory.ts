@@ -30,6 +30,7 @@ import { DeeplProvider } from './translation/deepl-provider';
 import { OpenAiTranslationProvider } from './translation/openai-provider';
 import { GoogleTranslateProvider } from './translation/google-translate-provider';
 import { GoogleTranslateFreeProvider } from './translation/google-translate-free-provider';
+import type { GlossaryEntry } from './translation/glossary';
 import type { TranslationEngineId, TranslationProvider } from './translation/translation-types';
 import { MockTtsProvider } from './tts/mock-tts-provider';
 import { AzureTtsProvider } from './tts/azure-tts-provider';
@@ -68,6 +69,11 @@ export interface EngineFactoryOptions {
    * the synthesized translation to the right ear.
    */
   dualEarStereo?: boolean;
+  /**
+   * User-defined translation glossary applied around every translation
+   * call (forwarded to the TranslationRouter).
+   */
+  glossary?: readonly GlossaryEntry[];
 }
 
 export function createEngineRouter(options: EngineFactoryOptions): EngineRouter {
@@ -89,7 +95,7 @@ export function createEngineRouter(options: EngineFactoryOptions): EngineRouter 
     capture: options.capture,
     playback: options.playback,
     stt: { providers: sttProviders, sessionDefaults: { sourceLang: options.sourceLang ?? 'auto' } },
-    translation: { providers: translationProviders },
+    translation: { providers: translationProviders, glossary: options.glossary },
     tts: { providers: ttsProviders },
     sourceLang: options.sourceLang ?? 'auto',
     targetLang: options.targetLang ?? DEFAULT_CONFIG.defaultTargetLang,

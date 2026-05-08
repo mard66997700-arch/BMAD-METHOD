@@ -13,6 +13,7 @@
  * repeat constantly.
  */
 
+import { applyGlossary, restoreGlossary, type GlossaryEntry } from './glossary';
 import type {
   TranslationEngineId,
   TranslationProvider,
@@ -25,12 +26,19 @@ export interface TranslationRouterOptions {
   providers: TranslationProvider[];
   /** LRU cache size (per direction). Default 200. */
   cacheSize?: number;
+  /**
+   * Optional glossary applied around every translate() / translateStream()
+   * call. Source matches are replaced with opaque tokens before the
+   * provider call and the user's chosen target term is restored after.
+   */
+  glossary?: readonly GlossaryEntry[];
 }
 
 export class TranslationRouter {
   private readonly providers: TranslationProvider[];
   private readonly cache = new Map<string, TranslationResult>();
   private readonly cacheSize: number;
+  private glossary: readonly GlossaryEntry[];
 
   constructor(options: TranslationRouterOptions) {
     if (options.providers.length === 0) {
@@ -38,6 +46,19 @@ export class TranslationRouter {
     }
     this.providers = options.providers.slice();
     this.cacheSize = options.cacheSize ?? 200;
+    this.glossary = options.glossary ?? [];
+  }
+
+  /** Replace the active glossary. Clears the cache so previously cached
+   * translations don't leak yesterday's term mappings. */
+  setGlossary(entries: readonly GlossaryEntry[]): void {
+    this.glossary = entries.slice();
+    this.cache.clear();
+  }
+
+  /** Inspect the active glossary. Returns a defensive copy. */
+  getGlossary(): GlossaryEntry[] {
+    return this.glossary.slice();
   }
 
   /** Set the active engine by id; falls back to the next available engine on failure. */
@@ -71,11 +92,23 @@ export class TranslationRouter {
       this.cache.set(key, cached);
       return { ...cached, cached: true };
     }
+    const applied = applyGlossary(
+      request.text,
+      this.glossary,
+      request.sourceLang,
+      request.targetLang,
+    );
+    const providerRequest: TranslationRequest = applied.placeholders.size === 0
+      ? request
+      : { ...request, text: applied.text };
     let lastError: Error | null = null;
     for (const provider of this.providers) {
       if (!provider.isAvailable()) continue;
       try {
-        const result = await provider.translate(request);
+        const raw = await provider.translate(providerRequest);
+        const result: TranslationResult = applied.placeholders.size === 0
+          ? raw
+          : { ...raw, text: restoreGlossary(raw.text, applied.placeholders) };
         this.recordCache(key, result);
         return result;
       } catch (err) {
@@ -100,23 +133,35 @@ export class TranslationRouter {
       yield cached.text;
       return;
     }
+    const applied = applyGlossary(
+      request.text,
+      this.glossary,
+      request.sourceLang,
+      request.targetLang,
+    );
+    const providerRequest: TranslationRequest = applied.placeholders.size === 0
+      ? request
+      : { ...request, text: applied.text };
     for (const provider of this.providers) {
       if (!provider.isAvailable()) continue;
       try {
         if (provider.translateStream) {
           let last = '';
-          for await (const partial of provider.translateStream(request)) {
+          for await (const partial of provider.translateStream(providerRequest)) {
             last = partial;
-            yield partial;
+            yield restoreGlossary(partial, applied.placeholders);
           }
           this.recordCache(key, {
-            text: last,
+            text: restoreGlossary(last, applied.placeholders),
             sourceLang: request.sourceLang === 'auto' ? 'auto' : request.sourceLang,
             targetLang: request.targetLang,
             engine: provider.id,
           });
         } else {
-          const result = await provider.translate(request);
+          const raw = await provider.translate(providerRequest);
+          const result: TranslationResult = applied.placeholders.size === 0
+            ? raw
+            : { ...raw, text: restoreGlossary(raw.text, applied.placeholders) };
           this.recordCache(key, result);
           yield result.text;
         }

@@ -16,6 +16,7 @@ import type { SttEngineId } from '../core/stt/stt-types';
 import type { TranslationEngineId } from '../core/translation/translation-types';
 import type { TtsEngineId } from '../core/tts/tts-types';
 import { withGender, withPitch, withSpeed, type VoiceGender } from '../core/tts/voice-settings';
+import type { GlossaryEntry } from '../core/translation/glossary';
 import { COLORS } from '../theme/colors';
 
 /**
@@ -213,6 +214,15 @@ export function SettingsScreen() {
         </View>
       </Section>
 
+      <Section title="Glossary">
+        <Text style={styles.help}>
+          Force specific terms to translate the way you want. Useful for proper nouns,
+          domain jargon, or religious terminology (e.g. &quot;Original sin&quot; →
+          &quot;Tội nguyên tổ&quot;).
+        </Text>
+        <GlossaryEditor entries={state.glossary} />
+      </Section>
+
       <Pressable
         style={styles.advancedHeader}
         onPress={() => setAdvancedOpen((v) => !v)}
@@ -335,6 +345,75 @@ function KeyStatus({ name }: { name: EnvKey }) {
   );
 }
 
+function GlossaryEditor({ entries }: { entries: GlossaryEntry[] }) {
+  const [draftSource, setDraftSource] = useState('');
+  const [draftTarget, setDraftTarget] = useState('');
+
+  const onAdd = () => {
+    const source = draftSource.trim();
+    const target = draftTarget.trim();
+    if (source.length === 0 || target.length === 0) return;
+    sessionStore.addGlossaryEntry({ source, target });
+    setDraftSource('');
+    setDraftTarget('');
+  };
+
+  return (
+    <View style={{ gap: 10 }}>
+      {entries.length === 0 && (
+        <Text style={styles.helpSmall}>No custom terms yet.</Text>
+      )}
+      {entries.map((entry, ix) => (
+        <View key={`${entry.source}-${ix}`} style={styles.glossaryRow}>
+          <View style={styles.glossaryTextBlock}>
+            <Text style={styles.engineLabel} numberOfLines={1}>
+              {entry.source}
+            </Text>
+            <Text style={styles.serviceDesc} numberOfLines={1}>
+              → {entry.target}
+            </Text>
+          </View>
+          <Pressable
+            style={styles.glossaryRemove}
+            onPress={() => sessionStore.removeGlossaryEntry(ix)}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove ${entry.source}`}
+          >
+            <Text style={styles.glossaryRemoveText}>×</Text>
+          </Pressable>
+        </View>
+      ))}
+      <View style={styles.glossaryAddRow}>
+        <TextInput
+          style={[styles.input, styles.glossaryInput]}
+          placeholder="Source term"
+          placeholderTextColor={COLORS.textMuted}
+          autoCapitalize="none"
+          value={draftSource}
+          onChangeText={setDraftSource}
+        />
+        <Text style={styles.glossaryArrow}>→</Text>
+        <TextInput
+          style={[styles.input, styles.glossaryInput]}
+          placeholder="Translation"
+          placeholderTextColor={COLORS.textMuted}
+          autoCapitalize="none"
+          value={draftTarget}
+          onChangeText={setDraftTarget}
+          onSubmitEditing={onAdd}
+        />
+      </View>
+      <Pressable
+        style={[styles.smallButton, styles.glossaryAddButton]}
+        onPress={onAdd}
+        accessibilityRole="button"
+      >
+        <Text style={styles.smallButtonText}>Add term</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function SmallButton({ label, onPress }: { label: string; onPress: () => void }) {
   return (
     <Pressable style={styles.smallButton} onPress={onPress}>
@@ -434,4 +513,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   advancedHeaderText: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  glossaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: 10,
+    padding: 10,
+    borderColor: COLORS.border,
+    borderWidth: 1,
+    gap: 8,
+  },
+  glossaryTextBlock: { flex: 1 },
+  glossaryRemove: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: COLORS.surfaceMuted,
+  },
+  glossaryRemoveText: { color: COLORS.text, fontSize: 18, fontWeight: '700', lineHeight: 20 },
+  glossaryAddRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  glossaryArrow: { color: COLORS.textMuted, fontSize: 16, paddingHorizontal: 2 },
+  glossaryInput: { flex: 1 },
+  glossaryAddButton: { alignSelf: 'flex-start', paddingHorizontal: 16 },
 });
